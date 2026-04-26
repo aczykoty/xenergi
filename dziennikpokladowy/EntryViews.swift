@@ -411,7 +411,7 @@ struct FuelSelectButton: View {
         Button(action: { UIImpactFeedbackGenerator(style: .medium).impactOccurred(); action() }) {
             VStack(spacing: 8) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 15).fill(isSelected ? fuelColor : fuelColor.opacity(isDark ? 0.08 : 0.05))
+                    RoundedRectangle(cornerRadius: 16).fill(isSelected ? fuelColor : fuelColor.opacity(isDark ? 0.08 : 0.05))
                     Image(systemName: fuelIcon).font(.system(size: 24, weight: .bold)).foregroundColor(isSelected ? (fuel == .pb95 ? .black : .white) : fuelColor)
                 }.frame(height: 70).overlay(RoundedRectangle(cornerRadius: 16).stroke(isSelected ? fuelColor.opacity(0.5) : fuelColor.opacity(0.2), lineWidth: isSelected ? 2 : 1))
                 Text(fuel.rawValue.uppercased()).font(.system(size: 10, weight: .black)).foregroundColor(isSelected ? (isDark ? .white : fuelColor) : .gray)
