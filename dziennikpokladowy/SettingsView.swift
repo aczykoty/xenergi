@@ -87,7 +87,7 @@ struct SettingsView: View {
                                 }
                             }
                         }
-                        .padding(.vertical, 10)
+                        .padding(.vertical, 12)
                         .padding(.horizontal, 5)
                     }
                 }
