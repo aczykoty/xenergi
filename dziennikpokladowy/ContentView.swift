@@ -260,7 +260,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle("Xenergi")
+            .navigationTitle("Dziennik")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
