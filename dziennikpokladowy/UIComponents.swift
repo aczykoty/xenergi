@@ -3,18 +3,17 @@ import SwiftUI
 // MARK: - Pitstop Top Bar
 
 struct PitstopTopBar: View {
+    @EnvironmentObject var data: AppData
     var onSettings: () -> Void
+
+    private var isDark: Bool { data.selectedTheme == .darkBlue }
 
     var body: some View {
         HStack {
-            HStack(spacing: 8) {
-                Image(systemName: "flag.checkered")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(PitstopColor.textPrimary)
-                Text("Pitstop")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundColor(PitstopColor.textPrimary)
-            }
+            Image(isDark ? "LogoPitstopWhite" : "LogoPitstopBlack")
+                .resizable()
+                .scaledToFit()
+                .frame(height: 24)
 
             Spacer()
 
@@ -379,39 +378,30 @@ struct BreakdownsSection: View {
     let year: Int
     let summaries: [(month: String, totalCost: Double, fillupCount: Int, logs: [LogEntry])]
     let currencySymbol: String
-    @Binding var expandedMonths: Set<String>
     var onStatsTap: () -> Void
-    var onLogTap: (LogEntry) -> Void
+    var onMonthTap: ((month: String, totalCost: Double, fillupCount: Int, logs: [LogEntry])) -> Void
+
+    private let cardPadding: CGFloat = 20
 
     var body: some View {
         VStack(alignment: .leading, spacing: PitstopSpacing.stack) {
             HStack {
-                Text("\(String(year)) Breakdowns")
+                Text("Summary \(String(year))")
                     .font(.system(size: 13, weight: .regular))
-                    .foregroundColor(PitstopColor.textSecondary)
+                    .foregroundColor(.gray)
                 Spacer()
                 Button("Stats") { onStatsTap() }
                     .font(.system(size: 13, weight: .regular))
                     .foregroundColor(PitstopColor.accentBlue)
                     .accessibilityIdentifier(ViewID.statsLink)
             }
-            .padding(.horizontal, PitstopSpacing.pageHorizontal + PitstopSpacing.cardInner)
+            .padding(.horizontal, PitstopSpacing.pageHorizontal + cardPadding)
 
             ForEach(summaries, id: \.month) { summary in
                 MonthBreakdownCard(
                     summary: summary,
                     currencySymbol: currencySymbol,
-                    isExpanded: expandedMonths.contains(summary.month),
-                    onToggle: {
-                        withAnimation(.snappy(duration: 0.25)) {
-                            if expandedMonths.contains(summary.month) {
-                                expandedMonths.remove(summary.month)
-                            } else {
-                                expandedMonths.insert(summary.month)
-                            }
-                        }
-                    },
-                    onLogTap: onLogTap
+                    onTap: { onMonthTap(summary) }
                 )
                 .accessibilityIdentifier(ViewID.monthCard(summary.month))
             }
@@ -423,11 +413,12 @@ struct BreakdownsSection: View {
 // MARK: - Month Breakdown Card
 
 struct MonthBreakdownCard: View {
+    @EnvironmentObject var data: AppData
     let summary: (month: String, totalCost: Double, fillupCount: Int, logs: [LogEntry])
     let currencySymbol: String
-    let isExpanded: Bool
-    var onToggle: () -> Void
-    var onLogTap: (LogEntry) -> Void
+    var onTap: () -> Void
+
+    private let cardPadding: CGFloat = 20
 
     private var monthName: String {
         summary.month.components(separatedBy: " ").first ?? summary.month
@@ -438,80 +429,50 @@ struct MonthBreakdownCard: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Collapsed header — always visible
-            Button(action: onToggle) {
-                VStack(spacing: 0) {
-                    HStack(alignment: .center) {
-                        Text(monthName)
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(PitstopColor.accentBlue)
+        Button(action: onTap) {
+            VStack(spacing: 0) {
+                HStack(alignment: .center) {
+                    Text(monthName)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(PitstopColor.accentBlue)
 
+                    Spacer()
+
+                    HStack(spacing: 4) {
+                        Image(systemName: "fuelpump.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(PitstopColor.textSecondary)
+                        Text("\(summary.fillupCount)")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(PitstopColor.textSecondary)
+                    }
+
+                    Spacer()
+
+                    Text(formatCurrency(summary.totalCost))
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundColor(PitstopColor.textPrimary)
+                }
+                .padding(.horizontal, cardPadding)
+                .padding(.vertical, 16)
+
+                if let last = lastTransaction {
+                    HStack {
+                        Text(transactionMeta(last))
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundColor(PitstopColor.textSecondary)
                         Spacer()
-
-                        HStack(spacing: 4) {
-                            Image(systemName: "fuelpump.fill")
-                                .font(.system(size: 11))
-                                .foregroundColor(PitstopColor.textSecondary)
-                            Text("\(summary.fillupCount)")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(PitstopColor.textSecondary)
-                        }
-                        .padding(.trailing, 12)
-
-                        Text(formatCurrency(summary.totalCost))
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundColor(PitstopColor.textPrimary)
+                        Text(formatCurrency(last.totalCost))
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(PitstopColor.textSecondary)
                     }
-                    .padding(.horizontal, PitstopSpacing.cardInner)
-                    .padding(.vertical, 14)
-
-                    // Last transaction preview (collapsed only)
-                    if !isExpanded, let last = lastTransaction {
-                        Divider()
-                            .padding(.horizontal, PitstopSpacing.cardInner)
-
-                        HStack {
-                            Text(transactionMeta(last))
-                                .font(.system(size: 13, weight: .regular))
-                                .foregroundColor(PitstopColor.textSecondary)
-                            Spacer()
-                            Text(formatCurrency(last.totalCost))
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(PitstopColor.textSecondary)
-                        }
-                        .padding(.horizontal, PitstopSpacing.cardInner)
-                        .padding(.vertical, 10)
-                    }
+                    .padding(.horizontal, cardPadding)
+                    .padding(.bottom, 12)
                 }
             }
-            .buttonStyle(PlainButtonStyle())
-
-            // Expanded transactions
-            if isExpanded {
-                Divider()
-                    .padding(.horizontal, PitstopSpacing.cardInner)
-
-                VStack(spacing: 0) {
-                    ForEach(summary.logs) { log in
-                        Button(action: { onLogTap(log) }) {
-                            BreakdownTransactionRow(
-                                log: log,
-                                currencySymbol: currencySymbol
-                            )
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        .accessibilityIdentifier(ViewID.transactionRow(log.id))
-
-                        if log.id != summary.logs.last?.id {
-                            Divider()
-                                .padding(.horizontal, PitstopSpacing.cardInner)
-                                .opacity(0.5)
-                        }
-                    }
-                }
-            }
+            .padding(.vertical, 10)
         }
+        .buttonStyle(PlainButtonStyle())
         .background(PitstopColor.cardSurface)
         .clipShape(RoundedRectangle(cornerRadius: PitstopRadius.card))
         .shadow(color: Color.black.opacity(0.04), radius: 8, y: 4)
@@ -519,9 +480,8 @@ struct MonthBreakdownCard: View {
     }
 
     private func transactionMeta(_ log: LogEntry) -> String {
-        let df = DateFormatter()
-        df.dateFormat = "dd.MM"
-        let date = df.string(from: log.date)
+        let day = Calendar.current.component(.day, from: log.date)
+        let ordinal = dayOrdinal(day)
 
         let tf = DateFormatter()
         tf.dateFormat = "h:mma"
@@ -529,12 +489,74 @@ struct MonthBreakdownCard: View {
         tf.pmSymbol = "pm"
         let time = tf.string(from: log.date)
 
-        let amount = String(format: "%.0fL", log.amount)
-        return "\(date), \(time), \(amount)"
+        let unit = log.fuelType?.unit(for: data.selectedUnitSystem) ?? "L"
+        let amount = String(format: "%.0f%@", log.amount, unit)
+        let fuelName = log.fuelType?.label(for: data.selectedUnitSystem) ?? ""
+        return "\(ordinal), \(time), \(amount) \(fuelName)"
+    }
+
+    private func dayOrdinal(_ day: Int) -> String {
+        let suffix: String
+        switch day {
+        case 11, 12, 13: suffix = "th"
+        default:
+            switch day % 10 {
+            case 1: suffix = "st"
+            case 2: suffix = "nd"
+            case 3: suffix = "rd"
+            default: suffix = "th"
+            }
+        }
+        return "\(day)\(suffix)"
     }
 
     private func formatCurrency(_ value: Double) -> String {
         String(format: "%.2f %@", value, currencySymbol)
+    }
+}
+
+// MARK: - Month Transactions Sheet
+
+struct MonthTransactionsSheet: View {
+    @EnvironmentObject var data: AppData
+    let month: String
+    let logs: [LogEntry]
+    let currencySymbol: String
+    @State private var logToEdit: LogEntry? = nil
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(logs) { log in
+                        Button(action: { logToEdit = log }) {
+                            BreakdownTransactionRow(
+                                log: log,
+                                currencySymbol: currencySymbol
+                            )
+                        }
+                        .buttonStyle(PlainButtonStyle())
+
+                        if log.id != logs.last?.id {
+                            Divider()
+                                .padding(.horizontal, 20)
+                                .opacity(0.5)
+                        }
+                    }
+                }
+                .background(PitstopColor.cardSurface)
+                .clipShape(RoundedRectangle(cornerRadius: PitstopRadius.card))
+                .padding(.horizontal, PitstopSpacing.pageHorizontal)
+                .padding(.top, 16)
+            }
+            .background(PitstopColor.background.ignoresSafeArea())
+            .navigationTitle(month)
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.medium, .large])
+        .sheet(item: $logToEdit) { log in
+            EditEntryView(data: data, logToEdit: log)
+        }
     }
 }
 

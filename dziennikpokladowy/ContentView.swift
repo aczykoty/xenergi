@@ -13,7 +13,7 @@ struct ContentView: View {
     @State private var logToEdit: LogEntry? = nil
     @State private var showingCostBreakdown = false
     @State private var showingOdometerHistory = false
-    @State private var expandedMonths: Set<String> = []
+    @State private var selectedMonthData: MonthSheetData? = nil
 
     var selectedCar: Car? {
         data.cars.first(where: { $0.id == selectedCarId })
@@ -112,9 +112,13 @@ struct ContentView: View {
                             year: currentYear,
                             summaries: monthSummaries,
                             currencySymbol: currencySymbol,
-                            expandedMonths: $expandedMonths,
                             onStatsTap: { showingStats = true },
-                            onLogTap: { log in logToEdit = log }
+                            onMonthTap: { summary in
+                                selectedMonthData = MonthSheetData(
+                                    month: summary.month,
+                                    logs: summary.logs
+                                )
+                            }
                         )
                         .padding(.top, 24)
                     }
@@ -126,9 +130,6 @@ struct ContentView: View {
         }
         .onAppear {
             if selectedCarId == nil { selectedCarId = data.cars.first?.id }
-            if let first = monthSummaries.first?.month {
-                expandedMonths.insert(first)
-            }
         }
         .onChange(of: data.cars) { _, newCars in
             if let id = selectedCarId, !newCars.contains(where: { $0.id == id }) {
@@ -155,7 +156,20 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingCostBreakdown) { CostBreakdownView(logs: currentLogs) }
         .sheet(isPresented: $showingOdometerHistory) { OdometerHistoryView(logs: currentLogs, unit: distanceUnit) }
+        .sheet(item: $selectedMonthData) { monthData in
+            MonthTransactionsSheet(
+                month: monthData.month,
+                logs: monthData.logs,
+                currencySymbol: currencySymbol
+            )
+        }
     }
+}
+
+struct MonthSheetData: Identifiable {
+    let id = UUID()
+    let month: String
+    let logs: [LogEntry]
 }
 
 // MARK: - Cost Breakdown (kept from original)
