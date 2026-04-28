@@ -1,18 +1,573 @@
 import SwiftUI
 
-// MARK: - 1. PRZYCISK AKCJI (Szklany / Solidny)
+// MARK: - Pitstop Top Bar
+
+struct PitstopTopBar: View {
+    var onSettings: () -> Void
+
+    var body: some View {
+        HStack {
+            HStack(spacing: 8) {
+                Image(systemName: "flag.checkered")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(PitstopColor.textPrimary)
+                Text("Pitstop")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundColor(PitstopColor.textPrimary)
+            }
+
+            Spacer()
+
+            Button(action: onSettings) {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(PitstopColor.textSecondary)
+                    .frame(width: 44, height: 44)
+                    .background(PitstopColor.cardSurface)
+                    .clipShape(Circle())
+                    .shadow(color: Color.black.opacity(0.06), radius: 8, y: 2)
+            }
+        }
+    }
+}
+
+// MARK: - Vehicle Hero Carousel
+
+struct VehicleHeroCarousel: View {
+    let cars: [Car]
+    @Binding var selectedCarId: UUID?
+    let logs: [LogEntry]
+    let currencySymbol: String
+    var onRefuel: () -> Void
+    var onCharge: () -> Void
+    var onEditCar: () -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: 12) {
+                ForEach(cars) { car in
+                    let carLogs = logs.filter { $0.carId == car.id }
+                    let monthTotal = currentMonthTotal(for: carLogs)
+
+                    VehicleHeroCard(
+                        car: car,
+                        monthTotal: monthTotal,
+                        currencySymbol: currencySymbol,
+                        onRefuel: {
+                            selectedCarId = car.id
+                            onRefuel()
+                        },
+                        onCharge: {
+                            selectedCarId = car.id
+                            onCharge()
+                        },
+                        onTap: {
+                            selectedCarId = car.id
+                            onEditCar()
+                        }
+                    )
+                    .id(car.id)
+                    .containerRelativeFrame(.horizontal) { length, _ in
+                        length - 80
+                    }
+                    .scrollTransition(.interactive, axis: .horizontal) { content, phase in
+                        content
+                            .scaleEffect(
+                                x: 1 - abs(phase.value) * 0.15,
+                                y: 1 - abs(phase.value) * 0.15
+                            )
+                            .opacity(1 - abs(phase.value) * 0.3)
+                    }
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollTargetBehavior(.viewAligned)
+        .scrollPosition(id: $selectedCarId)
+        .scrollIndicators(.hidden)
+        .contentMargins(.horizontal, 40, for: .scrollContent)
+    }
+
+    private func currentMonthTotal(for carLogs: [LogEntry]) -> Double {
+        let now = Date()
+        let cal = Calendar.current
+        return carLogs
+            .filter { cal.isDate($0.date, equalTo: now, toGranularity: .month) }
+            .reduce(0) { $0 + $1.totalCost }
+    }
+}
+
+// MARK: - Vehicle Hero Card
+
+struct VehicleHeroCard: View {
+    let car: Car
+    let monthTotal: Double
+    let currencySymbol: String
+    var onRefuel: () -> Void
+    var onCharge: () -> Void
+    var onTap: () -> Void
+
+    private var currentMonthName: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM"
+        formatter.locale = Locale.current
+        return formatter.string(from: Date()).capitalized
+    }
+
+    private var driveCategory: DriveCategory {
+        switch car.type {
+        case .petrol, .diesel: return .ice
+        case .electric: return .ev
+        case .phev, .phevDiesel: return .phev
+        }
+    }
+
+    private var driveLabel: String {
+        switch car.type {
+        case .petrol: return "PETROL"
+        case .diesel: return "DIESEL"
+        case .electric: return "EV"
+        case .phev, .phevDiesel: return "PHEV"
+        }
+    }
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            // Photo or fallback
+            heroImage
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+
+            // Top overlays
+            VStack {
+                HStack(alignment: .top) {
+                    // Vehicle type badge
+                    Text(driveLabel)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(PitstopColor.badgeText)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(PitstopColor.badgeBg.opacity(0.9))
+                        .clipShape(Capsule())
+
+                    Spacer()
+                }
+
+                // Month total pill
+                HStack(spacing: 6) {
+                    Text("\(currentMonthName) Total")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.white)
+                    Text(formatCurrency(monthTotal))
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(.white)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial.opacity(0.8))
+                .environment(\.colorScheme, .dark)
+                .clipShape(Capsule())
+                .padding(.top, 4)
+
+                Spacer()
+
+                // CTA buttons
+                ctaButtons
+                    .padding(.bottom, PitstopSpacing.cardInner)
+            }
+            .padding(.horizontal, PitstopSpacing.cardInner)
+            .padding(.top, PitstopSpacing.cardInner)
+        }
+        .aspectRatio(0.78, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: PitstopRadius.card))
+        .onTapGesture { onTap() }
+    }
+
+    @ViewBuilder
+    private var heroImage: some View {
+        if let imageData = car.imageData, let uiImage = UIImage(data: imageData) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+        } else {
+            // Fallback gradient with car icon
+            ZStack {
+                fallbackGradient
+                VStack(spacing: 12) {
+                    Image(systemName: fallbackIcon)
+                        .font(.system(size: 48, weight: .light))
+                        .foregroundColor(.white.opacity(0.6))
+                    Text(car.name)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.8))
+                }
+            }
+        }
+    }
+
+    private var fallbackGradient: some View {
+        LinearGradient(
+            colors: fallbackColors,
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var fallbackColors: [Color] {
+        switch driveCategory {
+        case .ice: return [Color(hex: 0x2C3E50), Color(hex: 0x4A6274)]
+        case .ev: return [Color(hex: 0x1A5632), Color(hex: 0x2D7A4F)]
+        case .phev: return [Color(hex: 0x1B3A5C), Color(hex: 0x2D6A9F)]
+        }
+    }
+
+    private var fallbackIcon: String {
+        switch driveCategory {
+        case .ice: return "car.fill"
+        case .ev: return "bolt.car.fill"
+        case .phev: return "leaf.fill"
+        }
+    }
+
+    @ViewBuilder
+    private var ctaButtons: some View {
+        switch driveCategory {
+        case .ice:
+            PitstopCTAButton(
+                title: "Refuel",
+                icon: "fuelpump.fill",
+                color: PitstopColor.ctaOlive,
+                action: onRefuel
+            )
+        case .ev:
+            PitstopCTAButton(
+                title: "Charge",
+                icon: "bolt.fill",
+                color: PitstopColor.ctaCharge,
+                action: onCharge
+            )
+        case .phev:
+            HStack(spacing: 8) {
+                PitstopCTAButton(
+                    title: "Refuel",
+                    icon: "fuelpump.fill",
+                    color: PitstopColor.ctaOlive,
+                    action: onRefuel
+                )
+                PitstopCTAButton(
+                    title: "Charge",
+                    icon: "bolt.fill",
+                    color: PitstopColor.ctaCharge,
+                    action: onCharge
+                )
+            }
+        }
+    }
+
+    private func formatCurrency(_ value: Double) -> String {
+        String(format: "%@%.2f", currencySymbol, value)
+    }
+}
+
+enum DriveCategory {
+    case ice, ev, phev
+}
+
+// MARK: - CTA Button
+
+struct PitstopCTAButton: View {
+    let title: String
+    let icon: String
+    let color: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+            }
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(color)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - Page Dots
+
+struct PitstopPageDots: View {
+    let count: Int
+    let currentIndex: Int
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<count, id: \.self) { index in
+                if index == currentIndex {
+                    Capsule()
+                        .fill(PitstopColor.textPrimary.opacity(0.7))
+                        .frame(width: 18, height: 6)
+                } else {
+                    Circle()
+                        .fill(Color.gray.opacity(0.3))
+                        .frame(width: 6, height: 6)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.black.opacity(0.05))
+        .clipShape(Capsule())
+        .animation(.snappy(duration: 0.25), value: currentIndex)
+    }
+}
+
+// MARK: - Breakdowns Section
+
+struct BreakdownsSection: View {
+    let year: Int
+    let summaries: [(month: String, totalCost: Double, fillupCount: Int, logs: [LogEntry])]
+    let currencySymbol: String
+    @Binding var expandedMonths: Set<String>
+    var onStatsTap: () -> Void
+    var onLogTap: (LogEntry) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PitstopSpacing.stack) {
+            HStack {
+                Text("\(String(year)) Breakdowns")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(PitstopColor.textPrimary)
+                Spacer()
+                Button("Stats") { onStatsTap() }
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(PitstopColor.accentBlue)
+            }
+            .padding(.horizontal, PitstopSpacing.pageHorizontal)
+
+            ForEach(summaries, id: \.month) { summary in
+                MonthBreakdownCard(
+                    summary: summary,
+                    currencySymbol: currencySymbol,
+                    isExpanded: expandedMonths.contains(summary.month),
+                    onToggle: {
+                        withAnimation(.snappy(duration: 0.25)) {
+                            if expandedMonths.contains(summary.month) {
+                                expandedMonths.remove(summary.month)
+                            } else {
+                                expandedMonths.insert(summary.month)
+                            }
+                        }
+                    },
+                    onLogTap: onLogTap
+                )
+            }
+        }
+    }
+}
+
+// MARK: - Month Breakdown Card
+
+struct MonthBreakdownCard: View {
+    let summary: (month: String, totalCost: Double, fillupCount: Int, logs: [LogEntry])
+    let currencySymbol: String
+    let isExpanded: Bool
+    var onToggle: () -> Void
+    var onLogTap: (LogEntry) -> Void
+
+    private var monthName: String {
+        summary.month.components(separatedBy: " ").first ?? summary.month
+    }
+
+    private var lastTransaction: LogEntry? {
+        summary.logs.first
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Collapsed header — always visible
+            Button(action: onToggle) {
+                VStack(spacing: 0) {
+                    HStack(alignment: .center) {
+                        Text(monthName)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(PitstopColor.accentBlue)
+
+                        Spacer()
+
+                        HStack(spacing: 4) {
+                            Image(systemName: "fuelpump.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(PitstopColor.textSecondary)
+                            Text("\(summary.fillupCount)")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(PitstopColor.textSecondary)
+                        }
+                        .padding(.trailing, 12)
+
+                        Text(formatCurrency(summary.totalCost))
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundColor(PitstopColor.textPrimary)
+                    }
+                    .padding(.horizontal, PitstopSpacing.cardInner)
+                    .padding(.vertical, 14)
+
+                    // Last transaction preview (collapsed only)
+                    if !isExpanded, let last = lastTransaction {
+                        Divider()
+                            .padding(.horizontal, PitstopSpacing.cardInner)
+
+                        HStack {
+                            Text(transactionMeta(last))
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundColor(PitstopColor.textSecondary)
+                            Spacer()
+                            Text(formatCurrency(last.totalCost))
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(PitstopColor.textSecondary)
+                        }
+                        .padding(.horizontal, PitstopSpacing.cardInner)
+                        .padding(.vertical, 10)
+                    }
+                }
+            }
+            .buttonStyle(PlainButtonStyle())
+
+            // Expanded transactions
+            if isExpanded {
+                Divider()
+                    .padding(.horizontal, PitstopSpacing.cardInner)
+
+                VStack(spacing: 0) {
+                    ForEach(summary.logs) { log in
+                        Button(action: { onLogTap(log) }) {
+                            BreakdownTransactionRow(
+                                log: log,
+                                currencySymbol: currencySymbol
+                            )
+                        }
+                        .buttonStyle(PlainButtonStyle())
+
+                        if log.id != summary.logs.last?.id {
+                            Divider()
+                                .padding(.horizontal, PitstopSpacing.cardInner)
+                                .opacity(0.5)
+                        }
+                    }
+                }
+            }
+        }
+        .background(PitstopColor.cardSurface)
+        .clipShape(RoundedRectangle(cornerRadius: PitstopRadius.card))
+        .shadow(color: Color.black.opacity(0.04), radius: 8, y: 4)
+        .padding(.horizontal, PitstopSpacing.pageHorizontal)
+    }
+
+    private func transactionMeta(_ log: LogEntry) -> String {
+        let df = DateFormatter()
+        df.dateFormat = "dd.MM"
+        let date = df.string(from: log.date)
+
+        let tf = DateFormatter()
+        tf.dateFormat = "h:mma"
+        tf.amSymbol = "am"
+        tf.pmSymbol = "pm"
+        let time = tf.string(from: log.date)
+
+        let amount = String(format: "%.0fL", log.amount)
+        return "\(date), \(time), \(amount)"
+    }
+
+    private func formatCurrency(_ value: Double) -> String {
+        String(format: "%@%.2f", currencySymbol, value)
+    }
+}
+
+// MARK: - Breakdown Transaction Row
+
+struct BreakdownTransactionRow: View {
+    @EnvironmentObject var data: AppData
+    let log: LogEntry
+    let currencySymbol: String
+
+    private var fuelInfo: (name: String, color: Color) {
+        let type = log.fuelType ?? .pb95
+        let label = type.label(for: data.selectedUnitSystem).uppercased()
+
+        switch type {
+        case .pb95: return (label, Color(hex: 0xFFBE00))
+        case .pb98: return (label, .red)
+        case .diesel: return (label, Color(hex: 0x333333))
+        case .lpg: return (label, .blue)
+        case .electricity: return ("EV", .green)
+        case .adblue: return (label, .cyan)
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Fuel icon
+            ZStack {
+                Circle()
+                    .fill(fuelInfo.color.opacity(0.12))
+                    .frame(width: 36, height: 36)
+                Image(systemName: log.type == .charge ? "bolt.fill" : "fuelpump.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(fuelInfo.color)
+            }
+
+            // Grade chip + date
+            VStack(alignment: .leading, spacing: 4) {
+                Text(fuelInfo.name)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(fuelInfo.color)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(fuelInfo.color.opacity(0.1))
+                    .cornerRadius(PitstopRadius.chip)
+
+                Text(log.date, style: .date)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(PitstopColor.textSecondary)
+            }
+
+            Spacer()
+
+            // Cost + amount
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(String(format: "%@%.2f", currencySymbol, log.totalCost))
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(PitstopColor.textPrimary)
+
+                Text(String(format: "%.1f %@", log.amount, log.fuelType?.unit(for: data.selectedUnitSystem) ?? "L"))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(PitstopColor.textSecondary)
+            }
+        }
+        .padding(.horizontal, PitstopSpacing.cardInner)
+        .padding(.vertical, 10)
+    }
+}
+
+// MARK: - Shared Components (used by other views)
+
 struct ActionButton: View {
     @EnvironmentObject var data: AppData
-    
+
     let title: String
     let icon: String
     let color: Color
     let isDisabled: Bool
     let action: () -> Void
-    
+
     private var isDark: Bool { data.selectedTheme == .darkBlue }
     private var isWallpaperActive: Bool { data.selectedWallpaper != .none }
-    
+
     private var buttonBg: Color { isDark ? Color(red: 30/255, green: 45/255, blue: 75/255) : .white }
     private var textColor: Color { isDark ? .white.opacity(0.9) : .black }
 
@@ -22,7 +577,7 @@ struct ActionButton: View {
                 Image(systemName: icon)
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundColor(isDisabled ? .gray.opacity(0.3) : color)
-                
+
                 Text(title)
                     .font(.system(size: 12, weight: .bold))
                     .tracking(1.0)
@@ -33,7 +588,6 @@ struct ActionButton: View {
             .background(
                 ZStack {
                     if isWallpaperActive {
-                        // EFEKT SZKŁA
                         Rectangle()
                             .fill(.ultraThinMaterial)
                             .environment(\.colorScheme, isDark ? .dark : .light)
@@ -53,203 +607,17 @@ struct ActionButton: View {
     }
 }
 
-// MARK: - 2. GŁÓWNA KARTA POJAZDU (Glassmorphism Edition)
-struct HeroCardView: View {
-    @EnvironmentObject var data: AppData
-    let car: Car
-    let totalCost: Double
-    let logs: [LogEntry]
-    var onCostTap: () -> Void
-    var onOdometerTap: () -> Void
-    
-    private var isDark: Bool { data.selectedTheme == .darkBlue }
-    private var isWallpaperActive: Bool { data.selectedWallpaper != .none }
-    private var currency: String { data.selectedUnitSystem == .imperial ? "$" : "zł" }
-    private var distUnit: String { data.selectedUnitSystem == .imperial ? "mi" : "km" }
-
-    private var brandName: String { car.name.components(separatedBy: " ").first ?? car.name }
-    private var modelSuffix: String {
-        let parts = car.name.components(separatedBy: " ")
-        return parts.count > 1 ? parts.dropFirst().joined(separator: " ") : ""
-    }
-    
-    // MARK: - HELPERS (Scope Safety)
-    private var driveTypeColor: Color {
-        switch car.type {
-        case .petrol: return .orange
-        case .diesel: return isDark ? Color(white: 0.8) : Color(white: 0.2)
-        case .electric: return .green
-        case .phev, .phevDiesel: return .blue
-        }
-    }
-    
-    private var driveTypeTitle: String {
-        switch car.type {
-        case .petrol: return "BENZYNA"
-        case .diesel: return "DIESEL"
-        case .electric: return "ELEKTRYK"
-        case .phev: return "PHEV"
-        case .phevDiesel: return "PHEV (DIESEL)"
-        }
-    }
-
-    private var iconForType: String {
-        switch car.type {
-        case .electric: return "bolt.fill"
-        case .phev, .phevDiesel: return "leaf.fill"
-        default: return "drop.fill"
-        }
-    }
-    
-    var lastOdometer: String {
-        let sorted = logs.compactMap { $0.odometer }.sorted()
-        return sorted.last != nil ? "\(sorted.last!) \(distUnit)" : "— \(distUnit)"
-    }
-
-    // MARK: - BODY
-    var body: some View {
-        ZStack(alignment: .leading) {
-            
-            // --- 1. TŁO SZKLANE (IDEALNIE DOPASOWANE) ---
-            if isWallpaperActive {
-                RoundedRectangle(cornerRadius: 28)
-                    // EKSTREMALNA PRZEZROCZYSTOŚĆ (0.35 opacity materiału)
-                    .fill(.ultraThinMaterial.opacity(0.35))
-                    .environment(\.colorScheme, isDark ? .dark : .light)
-                    // Połysk krawędzi wewnątrz szkła
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 28)
-                            .fill(isDark ? Color.white.opacity(0.02) : Color.white.opacity(0.15))
-                            .blendMode(.overlay)
-                    )
-            } else {
-                RoundedRectangle(cornerRadius: 28)
-                    .fill(isDark ? Color(red: 20/255, green: 30/255, blue: 50/255) : .white)
-            }
-            
-            // --- 2. SUBTELNY BLIK (PŁYNNY GLOSS) ---
-            if isWallpaperActive {
-                RoundedRectangle(cornerRadius: 28)
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                .white.opacity(isDark ? 0.08 : 0.35),
-                                .clear,
-                                .white.opacity(isDark ? 0.01 : 0.05)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-            }
-
-            // --- 3. TREŚĆ ---
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(driveTypeTitle)
-                            .font(.system(size: 8, weight: .black))
-                            .tracking(2.0)
-                            .foregroundColor(driveTypeColor)
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(driveTypeColor.opacity(0.12))
-                            .cornerRadius(4)
-                        
-                        Text(brandName)
-                            .font(.system(size: 26, weight: .bold))
-                            .foregroundColor(isDark ? .white : .black)
-                        
-                        if !modelSuffix.isEmpty {
-                            Text(modelSuffix)
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(isDark ? .white.opacity(0.7) : .gray)
-                        }
-
-                        if !car.licensePlate.isEmpty {
-                            Text(car.licensePlate.uppercased())
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(isDark ? .white : .black)
-                                .padding(.horizontal, 7).padding(.vertical, 3)
-                                .background(RoundedRectangle(cornerRadius: 6).fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.04)))
-                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.08), lineWidth: 0.5))
-                                .padding(.top, 4)
-                        }
-                    }
-                    Spacer()
-                    
-                    if let imageData = car.imageData, let uiImage = UIImage(data: imageData) {
-                        Image(uiImage: uiImage)
-                            .resizable().scaledToFit().frame(width: 120, height: 80).cornerRadius(10)
-                            .shadow(color: .black.opacity(isDark ? 0.3 : 0.05), radius: 5)
-                    }
-                }
-                .padding(.horizontal, 25).padding(.top, 25)
-                
-                Spacer(minLength: 24)
-                
-                Divider()
-                    .background(isDark ? Color.white.opacity(0.1) : Color.black.opacity(0.04))
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 6)
-                
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("KOSZT ŁĄCZNY").font(.system(size: 9, weight: .bold)).foregroundColor(.gray)
-                        Text(String(format: "%.0f %@", totalCost, currency))
-                            .font(.system(size: 20, weight: .black))
-                            .foregroundColor(Color(red: 50/255, green: 215/255, blue: 110/255))
-                            .shadow(color: Color(red: 50/255, green: 215/255, blue: 110/255).opacity(0.25), radius: 10)
-                    }
-                    .onTapGesture { onCostTap() }
-                    
-                    Spacer()
-                    
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text("LICZNIK").font(.system(size: 9, weight: .bold)).foregroundColor(.gray)
-                        Text(lastOdometer)
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundColor(isDark ? .white : .black)
-                    }
-                    .onTapGesture { onOdometerTap() }
-                }
-                .padding(.horizontal, 25).padding(.bottom, 16)
-            }
-        }
-        .frame(height: 190)
-        // GWARANCJA DOPASOWANIA: Docinamy wszystko do obrysu szkła
-        .clipShape(RoundedRectangle(cornerRadius: 28))
-        .overlay(
-            // --- NAJCIEŃSZY RANT ŚWIATA (0.5 pkt) ---
-            RoundedRectangle(cornerRadius: 28)
-                .stroke(
-                    LinearGradient(
-                        gradient: Gradient(colors: [
-                            .white.opacity(isDark ? 0.3 : 0.8),
-                            .clear,
-                            .white.opacity(isDark ? 0.05 : 0.15)
-                        ]),
-                        startPoint: .topLeading, endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 0.5
-                )
-        )
-        // Cień rzucany przez całą strukturę (nieprostokątny!)
-        .shadow(color: Color.black.opacity(isDark ? 0.4 : 0.08), radius: 20, x: 0, y: 15)
-        .padding(.horizontal)
-    }
-}
-// MARK: - 3. WIERSZ HISTORII (Dopasowany do regionu)
 struct LogRowView: View {
     @EnvironmentObject var data: AppData
     let log: LogEntry
-    
+
     private var isDark: Bool { data.selectedTheme == .darkBlue }
     private var currency: String { data.selectedUnitSystem == .imperial ? "$" : "zł" }
 
     private var fuelInfo: (name: String, color: Color) {
         let type = log.fuelType ?? .pb95
         let label = type.label(for: data.selectedUnitSystem).uppercased()
-        
+
         switch type {
         case .pb95: return (label, Color(red: 255/255, green: 190/255, blue: 0/255))
         case .pb98: return (label, .red)
@@ -276,11 +644,11 @@ struct LogRowView: View {
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(fuelInfo.color.opacity(isDark && log.fuelType == .diesel ? 0.4 : 0.1))
                         .foregroundColor(fuelInfo.color).cornerRadius(4)
-                    
+
                     Text(log.date, style: .date)
                         .font(.system(size: 12, weight: .medium)).foregroundColor(.gray)
                 }
-                
+
                 if let odo = log.odometer {
                     Text("\(odo) \(data.selectedUnitSystem == .imperial ? "mi" : "km")")
                         .font(.system(size: 14, weight: .bold))
@@ -294,7 +662,7 @@ struct LogRowView: View {
                 Text(String(format: "%.2f %@", log.totalCost, currency))
                     .font(.system(size: 16, weight: .black))
                     .foregroundColor(isDark ? .white : .black)
-                
+
                 Text(String(format: "%.2f %@", log.amount, log.fuelType?.unit(for: data.selectedUnitSystem) ?? "L"))
                     .font(.system(size: 12, weight: .bold)).foregroundColor(.gray)
             }
@@ -303,14 +671,13 @@ struct LogRowView: View {
     }
 }
 
-// MARK: - 4. MINI KARTA STATYSTYK (Szklana)
 struct MiniStatCard: View {
     @EnvironmentObject var data: AppData
     let title: String, value: String, unit: String, icon: String, color: Color
-    
+
     private var isDark: Bool { data.selectedTheme == .darkBlue }
     private var isWallpaperActive: Bool { data.selectedWallpaper != .none }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -338,14 +705,13 @@ struct MiniStatCard: View {
     }
 }
 
-// MARK: - 5. PRZYCISK WYBORU NAPĘDU
 struct TypeSelectButton: View {
     let title: String, icon: String, type: CarDriveType
     @Binding var selectedType: CarDriveType
     let color: Color, isDark: Bool
-    
+
     var isSelected: Bool { selectedType == type }
-    
+
     var body: some View {
         Button(action: { selectedType = type }) {
             VStack(spacing: 6) {
