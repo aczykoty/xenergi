@@ -387,15 +387,15 @@ struct BreakdownsSection: View {
         VStack(alignment: .leading, spacing: PitstopSpacing.stack) {
             HStack {
                 Text("\(String(year)) Breakdowns")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(PitstopColor.textPrimary)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundColor(PitstopColor.textSecondary)
                 Spacer()
                 Button("Stats") { onStatsTap() }
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: 13, weight: .regular))
                     .foregroundColor(PitstopColor.accentBlue)
                     .accessibilityIdentifier(ViewID.statsLink)
             }
-            .padding(.horizontal, PitstopSpacing.pageHorizontal)
+            .padding(.horizontal, PitstopSpacing.pageHorizontal + PitstopSpacing.cardInner)
 
             ForEach(summaries, id: \.month) { summary in
                 MonthBreakdownCard(

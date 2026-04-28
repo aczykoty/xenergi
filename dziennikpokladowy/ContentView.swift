@@ -130,6 +130,11 @@ struct ContentView: View {
                 expandedMonths.insert(first)
             }
         }
+        .onChange(of: data.cars) { _, newCars in
+            if let id = selectedCarId, !newCars.contains(where: { $0.id == id }) {
+                selectedCarId = newCars.first?.id
+            }
+        }
         .sheet(isPresented: $showingSettings) { SettingsView(data: data) }
         .sheet(isPresented: $showingAddCar) { ManageCarsView(data: data, selectedCarId: $selectedCarId) }
         .sheet(isPresented: $showingEditCar) {

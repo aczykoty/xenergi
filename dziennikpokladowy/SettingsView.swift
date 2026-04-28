@@ -8,6 +8,9 @@ struct SettingsView: View {
     @State private var showingFileImporter = false
     @State private var showingCoffeeShop = false
     @State private var importError = false
+    @State private var carToEdit: Car? = nil
+    @State private var showingAddCar = false
+    @State private var localSelectedCarId: UUID? = nil
     
     // MARK: - Helpers dla motywu
     private var isDark: Bool { data.selectedTheme == .darkBlue }
@@ -26,6 +29,51 @@ struct SettingsView: View {
     var body: some View {
         NavigationView {
             List {
+                // MARK: 0. POJAZDY
+                Section(header: Text("Pojazdy").foregroundColor(headerColor)) {
+                    ForEach(data.cars) { car in
+                        Button(action: { carToEdit = car }) {
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    if let imgData = car.imageData, let uiImage = UIImage(data: imgData) {
+                                        Image(uiImage: uiImage)
+                                            .resizable()
+                                            .scaledToFill()
+                                    } else {
+                                        Color.gray.opacity(0.1)
+                                        Image(systemName: "car.fill")
+                                            .foregroundColor(.gray)
+                                    }
+                                }
+                                .frame(width: 40, height: 40)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(car.name)
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(textColor)
+                                    Text(car.licensePlate.isEmpty ? "Brak rejestracji" : car.licensePlate.uppercased())
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(.gray)
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.gray.opacity(0.5))
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+
+                    Button(action: { showingAddCar = true }) {
+                        Label("Dodaj pojazd", systemImage: "plus.circle.fill")
+                            .foregroundColor(isDark ? .white : .blue)
+                    }
+                }
+                .listRowBackground(rowColor)
+
                 // MARK: 1. WYGLĄD I MOTYW
                 Section(header: Text("Wygląd").foregroundColor(headerColor)) {
                     VStack(alignment: .leading, spacing: 12) {
@@ -181,6 +229,12 @@ struct SettingsView: View {
                 Button("OK", role: .cancel) { }
             } message: {
                 Text("Nie udało się wczytać pliku. Sprawdź czy format jest poprawny.")
+            }
+            .sheet(item: $carToEdit) { car in
+                CarFormView(data: data, selectedCarId: $localSelectedCarId, carToEdit: car)
+            }
+            .sheet(isPresented: $showingAddCar) {
+                CarFormView(data: data, selectedCarId: $localSelectedCarId, carToEdit: nil)
             }
         }
     }
