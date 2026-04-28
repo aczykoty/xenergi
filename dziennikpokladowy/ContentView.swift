@@ -104,6 +104,7 @@ struct ContentView: View {
                             .padding(.horizontal, PitstopSpacing.pageHorizontal)
                         }
                         .buttonStyle(PlainButtonStyle())
+                        .accessibilityIdentifier(ViewID.emptyState)
                     }
 
                     if !currentLogs.isEmpty {

@@ -27,7 +27,9 @@ struct PitstopTopBar: View {
                     .clipShape(Circle())
                     .shadow(color: Color.black.opacity(0.06), radius: 8, y: 2)
             }
+            .accessibilityIdentifier(ViewID.settingsButton)
         }
+        .accessibilityIdentifier(ViewID.topBar)
     }
 }
 
@@ -42,50 +44,63 @@ struct VehicleHeroCarousel: View {
     var onCharge: () -> Void
     var onEditCar: () -> Void
 
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: 12) {
-                ForEach(cars) { car in
-                    let carLogs = logs.filter { $0.carId == car.id }
-                    let monthTotal = currentMonthTotal(for: carLogs)
+    private static let peekWidth: CGFloat = 23
+    private static let cardSpacing: CGFloat = 12
+    private static var sideInset: CGFloat { peekWidth + cardSpacing }
 
-                    VehicleHeroCard(
-                        car: car,
-                        monthTotal: monthTotal,
-                        currencySymbol: currencySymbol,
-                        onRefuel: {
-                            selectedCarId = car.id
-                            onRefuel()
-                        },
-                        onCharge: {
-                            selectedCarId = car.id
-                            onCharge()
-                        },
-                        onTap: {
-                            selectedCarId = car.id
-                            onEditCar()
+    private var isSingleCard: Bool { cars.count <= 1 }
+    private var inset: CGFloat { isSingleCard ? PitstopSpacing.pageHorizontal : Self.sideInset }
+
+    var body: some View {
+        GeometryReader { proxy in
+            let screenWidth = proxy.size.width
+            let cardWidth = screenWidth - 2 * inset
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: Self.cardSpacing) {
+                    ForEach(cars) { car in
+                        let carLogs = logs.filter { $0.carId == car.id }
+                        let monthTotal = currentMonthTotal(for: carLogs)
+
+                        VehicleHeroCard(
+                            car: car,
+                            monthTotal: monthTotal,
+                            currencySymbol: currencySymbol,
+                            onRefuel: {
+                                selectedCarId = car.id
+                                onRefuel()
+                            },
+                            onCharge: {
+                                selectedCarId = car.id
+                                onCharge()
+                            },
+                            onTap: {
+                                selectedCarId = car.id
+                                onEditCar()
+                            }
+                        )
+                        .frame(width: cardWidth)
+                        .id(car.id)
+                        .accessibilityIdentifier(ViewID.heroCard(car.id))
+                        .scrollTransition(.interactive, axis: .horizontal) { content, phase in
+                            content
+                                .scaleEffect(
+                                    x: 1 - abs(phase.value) * 0.05,
+                                    y: 1 - abs(phase.value) * 0.05
+                                )
+                                .opacity(1 - abs(phase.value) * 0.15)
                         }
-                    )
-                    .id(car.id)
-                    .containerRelativeFrame(.horizontal) { length, _ in
-                        length - 80
-                    }
-                    .scrollTransition(.interactive, axis: .horizontal) { content, phase in
-                        content
-                            .scaleEffect(
-                                x: 1 - abs(phase.value) * 0.15,
-                                y: 1 - abs(phase.value) * 0.15
-                            )
-                            .opacity(1 - abs(phase.value) * 0.3)
                     }
                 }
+                .scrollTargetLayout()
             }
-            .scrollTargetLayout()
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $selectedCarId, anchor: .center)
+            .scrollIndicators(.hidden)
+            .contentMargins(.horizontal, inset, for: .scrollContent)
         }
-        .scrollTargetBehavior(.viewAligned)
-        .scrollPosition(id: $selectedCarId)
-        .scrollIndicators(.hidden)
-        .contentMargins(.horizontal, 40, for: .scrollContent)
+        .frame(height: (UIScreen.main.bounds.width - 2 * inset) / VehicleHeroCard.cardRatio)
+        .accessibilityIdentifier(ViewID.heroCarousel)
     }
 
     private func currentMonthTotal(for carLogs: [LogEntry]) -> Double {
@@ -131,54 +146,78 @@ struct VehicleHeroCard: View {
         }
     }
 
-    var body: some View {
-        ZStack(alignment: .top) {
-            // Photo or fallback
-            heroImage
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
+    static let cardRatio: CGFloat = 320.0 / 430.0
 
-            // Top overlays
-            VStack {
-                HStack(alignment: .top) {
-                    // Vehicle type badge
-                    Text(driveLabel)
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(PitstopColor.badgeText)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(PitstopColor.badgeBg.opacity(0.9))
-                        .clipShape(Capsule())
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let h = w / Self.cardRatio
+
+            ZStack {
+                heroImage
+                    .frame(width: w, height: h)
+                    .clipped()
+
+                // Bottom gradient scrim for CTA legibility
+                VStack {
+                    Spacer()
+                    LinearGradient(
+                        colors: [.clear, .black.opacity(0.4)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: h * 0.35)
+                }
+
+                // Content overlay
+                VStack(spacing: 0) {
+                    // Glossy header bar
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(car.name)
+                                .font(.system(size: 17, weight: .bold))
+                                .foregroundColor(.white)
+                            if !car.licensePlate.isEmpty {
+                                Text(car.licensePlate.uppercased())
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                        }
+
+                        Spacer()
+
+                        Text(formatCurrency(monthTotal))
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 20)
+                    .background(
+                        ZStack {
+                            Capsule()
+                                .fill(.ultraThinMaterial)
+                                .environment(\.colorScheme, .dark)
+                            Capsule()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [.white.opacity(0.12), .white.opacity(0.04)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                        }
+                    )
+                    .clipShape(Capsule())
 
                     Spacer()
+
+                    ctaButtons
                 }
-
-                // Month total pill
-                HStack(spacing: 6) {
-                    Text("\(currentMonthName) Total")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(.white)
-                    Text(formatCurrency(monthTotal))
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(.white)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(.ultraThinMaterial.opacity(0.8))
-                .environment(\.colorScheme, .dark)
-                .clipShape(Capsule())
-                .padding(.top, 4)
-
-                Spacer()
-
-                // CTA buttons
-                ctaButtons
-                    .padding(.bottom, PitstopSpacing.cardInner)
+                .padding(PitstopSpacing.cardInner * 0.5)
             }
-            .padding(.horizontal, PitstopSpacing.cardInner)
-            .padding(.top, PitstopSpacing.cardInner)
+            .frame(width: w, height: h)
         }
-        .aspectRatio(0.78, contentMode: .fit)
+        .aspectRatio(Self.cardRatio, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: PitstopRadius.card))
         .onTapGesture { onTap() }
     }
@@ -186,11 +225,13 @@ struct VehicleHeroCard: View {
     @ViewBuilder
     private var heroImage: some View {
         if let imageData = car.imageData, let uiImage = UIImage(data: imageData) {
-            Image(uiImage: uiImage)
-                .resizable()
-                .scaledToFill()
+            Color.clear.overlay(
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+            )
+            .clipped()
         } else {
-            // Fallback gradient with car icon
             ZStack {
                 fallbackGradient
                 VStack(spacing: 12) {
@@ -229,43 +270,17 @@ struct VehicleHeroCard: View {
         }
     }
 
-    @ViewBuilder
     private var ctaButtons: some View {
-        switch driveCategory {
-        case .ice:
-            PitstopCTAButton(
-                title: "Refuel",
-                icon: "fuelpump.fill",
-                color: PitstopColor.ctaOlive,
-                action: onRefuel
-            )
-        case .ev:
-            PitstopCTAButton(
-                title: "Charge",
-                icon: "bolt.fill",
-                color: PitstopColor.ctaCharge,
-                action: onCharge
-            )
-        case .phev:
-            HStack(spacing: 8) {
-                PitstopCTAButton(
-                    title: "Refuel",
-                    icon: "fuelpump.fill",
-                    color: PitstopColor.ctaOlive,
-                    action: onRefuel
-                )
-                PitstopCTAButton(
-                    title: "Charge",
-                    icon: "bolt.fill",
-                    color: PitstopColor.ctaCharge,
-                    action: onCharge
-                )
-            }
-        }
+        PitstopCTAButton(
+            title: "Refuel",
+            icon: "fuelpump.fill",
+            action: onRefuel
+        )
+        .accessibilityIdentifier(ViewID.refuelCTA)
     }
 
     private func formatCurrency(_ value: Double) -> String {
-        String(format: "%@%.2f", currencySymbol, value)
+        String(format: "%.2f %@", value, currencySymbol)
     }
 }
 
@@ -278,21 +293,51 @@ enum DriveCategory {
 struct PitstopCTAButton: View {
     let title: String
     let icon: String
-    let color: Color
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                 Text(title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
             }
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(color)
+            .padding(.vertical, 20)
+            .background(
+                ZStack {
+                    // Blur layer
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .environment(\.colorScheme, .dark)
+
+                    // Gradient overlay for the olive-to-teal glossy tint
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    PitstopColor.ctaOlive.opacity(0.6),
+                                    PitstopColor.ctaOlive.opacity(0.3),
+                                    Color(hex: 0x5A7A6A).opacity(0.4)
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+
+                    // Top highlight for gloss
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [.white.opacity(0.15), .clear],
+                                startPoint: .top,
+                                endPoint: .center
+                            )
+                        )
+                }
+            )
             .clipShape(Capsule())
         }
         .buttonStyle(PlainButtonStyle())
@@ -324,6 +369,7 @@ struct PitstopPageDots: View {
         .background(Color.black.opacity(0.05))
         .clipShape(Capsule())
         .animation(.snappy(duration: 0.25), value: currentIndex)
+        .accessibilityIdentifier(ViewID.pageDots)
     }
 }
 
@@ -347,6 +393,7 @@ struct BreakdownsSection: View {
                 Button("Stats") { onStatsTap() }
                     .font(.system(size: 15, weight: .medium))
                     .foregroundColor(PitstopColor.accentBlue)
+                    .accessibilityIdentifier(ViewID.statsLink)
             }
             .padding(.horizontal, PitstopSpacing.pageHorizontal)
 
@@ -366,8 +413,10 @@ struct BreakdownsSection: View {
                     },
                     onLogTap: onLogTap
                 )
+                .accessibilityIdentifier(ViewID.monthCard(summary.month))
             }
         }
+        .accessibilityIdentifier(ViewID.breakdownsSection)
     }
 }
 
@@ -452,6 +501,7 @@ struct MonthBreakdownCard: View {
                             )
                         }
                         .buttonStyle(PlainButtonStyle())
+                        .accessibilityIdentifier(ViewID.transactionRow(log.id))
 
                         if log.id != summary.logs.last?.id {
                             Divider()
@@ -484,7 +534,7 @@ struct MonthBreakdownCard: View {
     }
 
     private func formatCurrency(_ value: Double) -> String {
-        String(format: "%@%.2f", currencySymbol, value)
+        String(format: "%.2f %@", value, currencySymbol)
     }
 }
 
@@ -540,7 +590,7 @@ struct BreakdownTransactionRow: View {
 
             // Cost + amount
             VStack(alignment: .trailing, spacing: 4) {
-                Text(String(format: "%@%.2f", currencySymbol, log.totalCost))
+                Text(String(format: "%.2f %@", log.totalCost, currencySymbol))
                     .font(.system(size: 15, weight: .bold))
                     .foregroundColor(PitstopColor.textPrimary)
 

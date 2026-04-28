@@ -27,7 +27,7 @@ enum PitstopColor {
 }
 
 enum PitstopRadius {
-    static let card: CGFloat = 24
+    static let card: CGFloat = 32
     static let pill: CGFloat = 999
     static let chip: CGFloat = 8
 }
@@ -36,4 +36,19 @@ enum PitstopSpacing {
     static let pageHorizontal: CGFloat = 20
     static let cardInner: CGFloat = 16
     static let stack: CGFloat = 12
+}
+
+enum ViewID {
+    static let topBar = "home.topbar"
+    static let settingsButton = "home.topbar.settings"
+    static let heroCarousel = "home.hero.carousel"
+    static func heroCard(_ id: UUID) -> String { "home.hero.card.\(id)" }
+    static let refuelCTA = "home.hero.cta.refuel"
+    static let chargeCTA = "home.hero.cta.charge"
+    static let pageDots = "home.hero.dots"
+    static let breakdownsSection = "home.breakdowns"
+    static let statsLink = "home.breakdowns.stats"
+    static func monthCard(_ month: String) -> String { "home.breakdowns.month.\(month)" }
+    static func transactionRow(_ id: UUID) -> String { "home.breakdowns.tx.\(id)" }
+    static let emptyState = "home.empty"
 }
