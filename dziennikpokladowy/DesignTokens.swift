@@ -27,7 +27,7 @@ enum PitstopColor {
 }
 
 enum PitstopRadius {
-    static let card: CGFloat = 32
+    static let card: CGFloat = 40
     static let pill: CGFloat = 999
     static let chip: CGFloat = 8
 }

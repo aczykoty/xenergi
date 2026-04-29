@@ -59,9 +59,13 @@ struct ContentView: View {
         Calendar.current.component(.year, from: Date())
     }
 
+    private var isDark: Bool { data.selectedTheme == .darkBlue }
+    private var bgColor: Color { isDark ? Color(red: 10/255, green: 18/255, blue: 30/255) : PitstopColor.background }
+    private var cardColor: Color { isDark ? Color(red: 20/255, green: 35/255, blue: 60/255) : PitstopColor.cardSurface }
+
     var body: some View {
         ZStack {
-            PitstopColor.background.ignoresSafeArea()
+            bgColor.ignoresSafeArea()
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 0) {
@@ -92,14 +96,14 @@ struct ContentView: View {
                             VStack(spacing: 12) {
                                 Image(systemName: "plus.circle.fill")
                                     .font(.system(size: 40))
-                                    .foregroundColor(PitstopColor.textSecondary.opacity(0.4))
+                                    .foregroundColor(isDark ? .white.opacity(0.3) : PitstopColor.textSecondary.opacity(0.4))
                                 Text("Add your first vehicle")
                                     .font(.system(size: 14, weight: .medium))
-                                    .foregroundColor(PitstopColor.textSecondary)
+                                    .foregroundColor(isDark ? .gray : PitstopColor.textSecondary)
                             }
                             .frame(maxWidth: .infinity)
                             .frame(height: 200)
-                            .background(PitstopColor.cardSurface)
+                            .background(cardColor)
                             .cornerRadius(PitstopRadius.card)
                             .padding(.horizontal, PitstopSpacing.pageHorizontal)
                         }
@@ -163,6 +167,7 @@ struct ContentView: View {
                 currencySymbol: currencySymbol
             )
         }
+        .preferredColorScheme(isDark ? .dark : .light)
     }
 }
 

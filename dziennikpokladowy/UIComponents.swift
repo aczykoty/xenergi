@@ -20,11 +20,11 @@ struct PitstopTopBar: View {
             Button(action: onSettings) {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(PitstopColor.textSecondary)
+                    .foregroundColor(isDark ? .gray : PitstopColor.textSecondary)
                     .frame(width: 44, height: 44)
-                    .background(PitstopColor.cardSurface)
+                    .background(isDark ? Color(red: 20/255, green: 35/255, blue: 60/255) : PitstopColor.cardSurface)
                     .clipShape(Circle())
-                    .shadow(color: Color.black.opacity(0.06), radius: 8, y: 2)
+                    .shadow(color: Color.black.opacity(isDark ? 0.2 : 0.06), radius: 8, y: 2)
             }
             .accessibilityIdentifier(ViewID.settingsButton)
         }
@@ -84,8 +84,8 @@ struct VehicleHeroCarousel: View {
                         .scrollTransition(.interactive, axis: .horizontal) { content, phase in
                             content
                                 .scaleEffect(
-                                    x: 1 - abs(phase.value) * 0.05,
-                                    y: 1 - abs(phase.value) * 0.05
+                                    x: 1 - abs(phase.value) * 0.1,
+                                    y: 1 - abs(phase.value) * 0.1
                                 )
                                 .opacity(1 - abs(phase.value) * 0.15)
                         }
@@ -171,10 +171,10 @@ struct VehicleHeroCard: View {
                 // Content overlay
                 VStack(spacing: 0) {
                     // Glossy header bar
-                    HStack(alignment: .top) {
+                    HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(car.name)
-                                .font(.system(size: 17, weight: .bold))
+                                .font(.system(size: 16, weight: .bold))
                                 .foregroundColor(.white)
                             if !car.licensePlate.isEmpty {
                                 Text(car.licensePlate.uppercased())
@@ -186,10 +186,10 @@ struct VehicleHeroCard: View {
                         Spacer()
 
                         Text(formatCurrency(monthTotal))
-                            .font(.system(size: 17, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                             .foregroundColor(.white)
                     }
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, 20)
                     .padding(.vertical, 20)
                     .background(
                         ZStack {
@@ -346,26 +346,29 @@ struct PitstopCTAButton: View {
 // MARK: - Page Dots
 
 struct PitstopPageDots: View {
+    @EnvironmentObject var data: AppData
     let count: Int
     let currentIndex: Int
+
+    private var isDark: Bool { data.selectedTheme == .darkBlue }
 
     var body: some View {
         HStack(spacing: 6) {
             ForEach(0..<count, id: \.self) { index in
                 if index == currentIndex {
                     Capsule()
-                        .fill(PitstopColor.textPrimary.opacity(0.7))
+                        .fill(isDark ? Color.white.opacity(0.7) : PitstopColor.textPrimary.opacity(0.7))
                         .frame(width: 18, height: 6)
                 } else {
                     Circle()
-                        .fill(Color.gray.opacity(0.3))
+                        .fill(isDark ? Color.white.opacity(0.2) : Color.gray.opacity(0.3))
                         .frame(width: 6, height: 6)
                 }
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(Color.black.opacity(0.05))
+        .background(isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.05))
         .clipShape(Capsule())
         .animation(.snappy(duration: 0.25), value: currentIndex)
         .accessibilityIdentifier(ViewID.pageDots)
@@ -387,11 +390,11 @@ struct BreakdownsSection: View {
         VStack(alignment: .leading, spacing: PitstopSpacing.stack) {
             HStack {
                 Text("Summary \(String(year))")
-                    .font(.system(size: 13, weight: .regular))
+                    .font(.system(size: 16, weight: .bold))
                     .foregroundColor(.gray)
                 Spacer()
                 Button("Stats") { onStatsTap() }
-                    .font(.system(size: 13, weight: .regular))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(PitstopColor.accentBlue)
                     .accessibilityIdentifier(ViewID.statsLink)
             }
@@ -419,6 +422,10 @@ struct MonthBreakdownCard: View {
     var onTap: () -> Void
 
     private let cardPadding: CGFloat = 20
+    private var isDark: Bool { data.selectedTheme == .darkBlue }
+    private var cardColor: Color { isDark ? Color(red: 20/255, green: 35/255, blue: 60/255) : PitstopColor.cardSurface }
+    private var primaryText: Color { isDark ? .white : PitstopColor.textPrimary }
+    private var secondaryText: Color { isDark ? .gray : PitstopColor.textSecondary }
 
     private var monthName: String {
         summary.month.components(separatedBy: " ").first ?? summary.month
@@ -433,25 +440,23 @@ struct MonthBreakdownCard: View {
             VStack(spacing: 0) {
                 HStack(alignment: .center) {
                     Text(monthName)
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(PitstopColor.accentBlue)
-
-                    Spacer()
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                     HStack(spacing: 4) {
                         Image(systemName: "fuelpump.fill")
                             .font(.system(size: 11))
-                            .foregroundColor(PitstopColor.textSecondary)
+                            .foregroundColor(secondaryText)
                         Text("\(summary.fillupCount)")
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(PitstopColor.textSecondary)
+                            .foregroundColor(secondaryText)
                     }
 
-                    Spacer()
-
                     Text(formatCurrency(summary.totalCost))
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundColor(PitstopColor.textPrimary)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(primaryText)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .padding(.horizontal, cardPadding)
                 .padding(.vertical, 16)
@@ -460,22 +465,23 @@ struct MonthBreakdownCard: View {
                     HStack {
                         Text(transactionMeta(last))
                             .font(.system(size: 13, weight: .regular))
-                            .foregroundColor(PitstopColor.textSecondary)
+                            .foregroundColor(secondaryText)
                         Spacer()
                         Text(formatCurrency(last.totalCost))
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(PitstopColor.textSecondary)
+                            .foregroundColor(secondaryText)
                     }
                     .padding(.horizontal, cardPadding)
                     .padding(.bottom, 12)
                 }
             }
             .padding(.vertical, 10)
+            .background(cardColor)
+            .contentShape(Rectangle())
         }
         .buttonStyle(PlainButtonStyle())
-        .background(PitstopColor.cardSurface)
         .clipShape(RoundedRectangle(cornerRadius: PitstopRadius.card))
-        .shadow(color: Color.black.opacity(0.04), radius: 8, y: 4)
+        .shadow(color: Color.black.opacity(isDark ? 0.2 : 0.04), radius: 8, y: 4)
         .padding(.horizontal, PitstopSpacing.pageHorizontal)
     }
 
@@ -524,6 +530,10 @@ struct MonthTransactionsSheet: View {
     let currencySymbol: String
     @State private var logToEdit: LogEntry? = nil
 
+    private var isDark: Bool { data.selectedTheme == .darkBlue }
+    private var bgColor: Color { isDark ? Color(red: 10/255, green: 18/255, blue: 30/255) : PitstopColor.background }
+    private var cardColor: Color { isDark ? Color(red: 20/255, green: 35/255, blue: 60/255) : PitstopColor.cardSurface }
+
     var body: some View {
         NavigationView {
             ScrollView {
@@ -540,20 +550,21 @@ struct MonthTransactionsSheet: View {
                         if log.id != logs.last?.id {
                             Divider()
                                 .padding(.horizontal, 20)
-                                .opacity(0.5)
+                                .opacity(isDark ? 0.3 : 0.5)
                         }
                     }
                 }
-                .background(PitstopColor.cardSurface)
+                .background(cardColor)
                 .clipShape(RoundedRectangle(cornerRadius: PitstopRadius.card))
                 .padding(.horizontal, PitstopSpacing.pageHorizontal)
                 .padding(.top, 16)
             }
-            .background(PitstopColor.background.ignoresSafeArea())
+            .background(bgColor.ignoresSafeArea())
             .navigationTitle(month)
             .navigationBarTitleDisplayMode(.inline)
         }
         .presentationDetents([.medium, .large])
+        .preferredColorScheme(isDark ? .dark : .light)
         .sheet(item: $logToEdit) { log in
             EditEntryView(data: data, logToEdit: log)
         }
@@ -567,6 +578,10 @@ struct BreakdownTransactionRow: View {
     let log: LogEntry
     let currencySymbol: String
 
+    private var isDark: Bool { data.selectedTheme == .darkBlue }
+    private var primaryText: Color { isDark ? .white : PitstopColor.textPrimary }
+    private var secondaryText: Color { isDark ? .gray : PitstopColor.textSecondary }
+
     private var fuelInfo: (name: String, color: Color) {
         let type = log.fuelType ?? .pb95
         let label = type.label(for: data.selectedUnitSystem).uppercased()
@@ -574,7 +589,7 @@ struct BreakdownTransactionRow: View {
         switch type {
         case .pb95: return (label, Color(hex: 0xFFBE00))
         case .pb98: return (label, .red)
-        case .diesel: return (label, Color(hex: 0x333333))
+        case .diesel: return (label, isDark ? Color(white: 0.85) : Color(hex: 0x333333))
         case .lpg: return (label, .blue)
         case .electricity: return ("EV", .green)
         case .adblue: return (label, .cyan)
@@ -583,46 +598,43 @@ struct BreakdownTransactionRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Fuel icon
             ZStack {
                 Circle()
-                    .fill(fuelInfo.color.opacity(0.12))
+                    .fill(fuelInfo.color.opacity(isDark ? 0.2 : 0.12))
                     .frame(width: 36, height: 36)
                 Image(systemName: log.type == .charge ? "bolt.fill" : "fuelpump.fill")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(fuelInfo.color)
             }
 
-            // Grade chip + date
             VStack(alignment: .leading, spacing: 4) {
                 Text(fuelInfo.name)
                     .font(.system(size: 9, weight: .bold))
                     .foregroundColor(fuelInfo.color)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(fuelInfo.color.opacity(0.1))
+                    .background(fuelInfo.color.opacity(isDark ? 0.2 : 0.1))
                     .cornerRadius(PitstopRadius.chip)
 
                 Text(log.date, style: .date)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(PitstopColor.textSecondary)
+                    .foregroundColor(secondaryText)
             }
 
             Spacer()
 
-            // Cost + amount
             VStack(alignment: .trailing, spacing: 4) {
                 Text(String(format: "%.2f %@", log.totalCost, currencySymbol))
                     .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(PitstopColor.textPrimary)
+                    .foregroundColor(primaryText)
 
                 Text(String(format: "%.1f %@", log.amount, log.fuelType?.unit(for: data.selectedUnitSystem) ?? "L"))
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(PitstopColor.textSecondary)
+                    .foregroundColor(secondaryText)
             }
         }
         .padding(.horizontal, PitstopSpacing.cardInner)
-        .padding(.vertical, 10)
+        .padding(.vertical, 20)
     }
 }
 
