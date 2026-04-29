@@ -174,7 +174,7 @@ struct VehicleHeroCard: View {
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(car.name)
-                                .font(.system(size: 16, weight: .bold))
+                                .font(.system(size: 18, weight: .bold))
                                 .foregroundColor(.white)
                             if !car.licensePlate.isEmpty {
                                 Text(car.licensePlate.uppercased())
@@ -186,11 +186,11 @@ struct VehicleHeroCard: View {
                         Spacer()
 
                         Text(formatCurrency(monthTotal))
-                            .font(.system(size: 16, weight: .bold))
+                            .font(.system(size: 18, weight: .bold))
                             .foregroundColor(.white)
                     }
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 20)
+                    .frame(height: 64)
                     .background(
                         ZStack {
                             Capsule()
