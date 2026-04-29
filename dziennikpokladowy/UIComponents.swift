@@ -43,8 +43,8 @@ struct VehicleHeroCarousel: View {
     var onCharge: () -> Void
     var onEditCar: () -> Void
 
-    private static let peekWidth: CGFloat = 23
-    private static let cardSpacing: CGFloat = 12
+    private static let peekWidth: CGFloat = 25
+    private static let cardSpacing: CGFloat = 1
     private static var sideInset: CGFloat { peekWidth + cardSpacing }
 
     private var isSingleCard: Bool { cars.count <= 1 }
@@ -97,8 +97,8 @@ struct VehicleHeroCarousel: View {
             .scrollPosition(id: $selectedCarId, anchor: .center)
             .scrollIndicators(.hidden)
             .contentMargins(.horizontal, inset, for: .scrollContent)
+            .frame(height: (screenWidth - 2 * inset) / VehicleHeroCard.cardRatio)
         }
-        .frame(height: (UIScreen.main.bounds.width - 2 * inset) / VehicleHeroCard.cardRatio)
         .accessibilityIdentifier(ViewID.heroCarousel)
     }
 

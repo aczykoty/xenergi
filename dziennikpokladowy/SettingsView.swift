@@ -262,7 +262,7 @@ struct SettingsView: View {
             while let next = presenter.presentedViewController { presenter = next }
             if let popover = activityVC.popoverPresentationController {
                 popover.sourceView = presenter.view
-                popover.sourceRect = CGRect(x: UIScreen.main.bounds.width / 2, y: UIScreen.main.bounds.height / 2, width: 0, height: 0)
+                popover.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY, width: 0, height: 0)
                 popover.permittedArrowDirections = []
             }
             presenter.present(activityVC, animated: true)
