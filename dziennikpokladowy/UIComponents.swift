@@ -427,17 +427,22 @@ struct BreakdownsSection: View {
             }
             .padding(.horizontal, PitstopSpacing.pageHorizontal + cardPadding)
 
-            ForEach(Array(summaries.enumerated()), id: \.element.month) { index, summary in
+            ForEach(summaries, id: \.month) { summary in
                 MonthBreakdownCard(
                     summary: summary,
                     currencySymbol: currencySymbol,
-                    showLastTransaction: index == 0,
+                    showLastTransaction: isCurrentMonth(summary),
                     onTap: { onMonthTap(summary) }
                 )
                 .accessibilityIdentifier(ViewID.monthCard(summary.month))
             }
         }
         .accessibilityIdentifier(ViewID.breakdownsSection)
+    }
+
+    private func isCurrentMonth(_ summary: (month: String, totalCost: Double, fillupCount: Int, logs: [LogEntry])) -> Bool {
+        guard let firstLog = summary.logs.first else { return false }
+        return Calendar.current.isDate(firstLog.date, equalTo: Date(), toGranularity: .month)
     }
 }
 

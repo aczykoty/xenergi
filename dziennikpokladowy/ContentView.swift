@@ -6,7 +6,7 @@ struct ContentView: View {
     @State private var selectedCarId: UUID?
 
     @State private var showingAddCar = false
-    @State private var showingStats = false
+    @State private var statsYear: YearStatsData? = nil
     @State private var showingSettings = false
     @State private var showingEditCar = false
     @State private var activeEntryType: EntryType? = nil
@@ -56,6 +56,19 @@ struct ContentView: View {
         return result.map { (month: $0.0, totalCost: $0.1, fillupCount: $0.2, logs: $0.3) }
     }
 
+    private var yearSections: [(year: Int, summaries: [(month: String, totalCost: Double, fillupCount: Int, logs: [LogEntry])])] {
+        let cal = Calendar.current
+        var grouped: [Int: [(month: String, totalCost: Double, fillupCount: Int, logs: [LogEntry])]] = [:]
+        for summary in monthSummaries {
+            guard let firstLog = summary.logs.first else { continue }
+            let year = cal.component(.year, from: firstLog.date)
+            grouped[year, default: []].append(summary)
+        }
+        return grouped
+            .map { (year: $0.key, summaries: $0.value) }
+            .sorted { $0.year > $1.year }
+    }
+
     private var currentYear: Int {
         Calendar.current.component(.year, from: Date())
     }
@@ -93,9 +106,9 @@ struct ContentView: View {
             }
         }
         .sheet(item: $logToEdit) { log in EditEntryView(data: data, logToEdit: log) }
-        .sheet(isPresented: $showingStats) {
+        .sheet(item: $statsYear) { yearData in
             if let car = selectedCar {
-                StatisticsView(car: car, logs: currentLogs)
+                StatisticsView(car: car, logs: yearData.logs)
             }
         }
         .sheet(isPresented: $showingCostBreakdown) { CostBreakdownView(logs: currentLogs) }
@@ -140,7 +153,8 @@ struct ContentView: View {
             onEditCar: { showingEditCar = true }
         )
         let expandedHeight = carousel.expandedHeight
-        let dotsReservedHeight: CGFloat = data.cars.count > 1 ? 28 : 0
+        let dotsTopGap: CGFloat = 24
+        let dotsReservedHeight: CGFloat = data.cars.count > 1 ? 28 + dotsTopGap : 0
 
         // Pick non-scrolling layout when content fits; fall back to the
         // scroll-collapse layout when the list overflows.
@@ -163,25 +177,12 @@ struct ContentView: View {
                         count: data.cars.count,
                         currentIndex: currentCarIndex
                     )
+                    .padding(.top, dotsTopGap)
                     .frame(maxWidth: .infinity)
                     .frame(height: dotsReservedHeight)
                 }
 
-                if !currentLogs.isEmpty {
-                    BreakdownsSection(
-                        year: currentYear,
-                        summaries: monthSummaries,
-                        currencySymbol: currencySymbol,
-                        onStatsTap: { showingStats = true },
-                        onMonthTap: { summary in
-                            selectedMonthData = MonthSheetData(
-                                month: summary.month,
-                                logs: summary.logs
-                            )
-                        }
-                    )
-                    .padding(.top, 16)
-                }
+                yearSectionsView
             }
             .onAppear { scrollOffset = 0 }
 
@@ -195,25 +196,12 @@ struct ContentView: View {
                                 count: data.cars.count,
                                 currentIndex: currentCarIndex
                             )
+                            .padding(.top, dotsTopGap)
                             .frame(maxWidth: .infinity)
                             .frame(height: dotsReservedHeight)
                         }
 
-                        if !currentLogs.isEmpty {
-                            BreakdownsSection(
-                                year: currentYear,
-                                summaries: monthSummaries,
-                                currencySymbol: currencySymbol,
-                                onStatsTap: { showingStats = true },
-                                onMonthTap: { summary in
-                                    selectedMonthData = MonthSheetData(
-                                        month: summary.month,
-                                        logs: summary.logs
-                                    )
-                                }
-                            )
-                            .padding(.top, 16)
-                        }
+                        yearSectionsView
                     }
                 }
                 .onScrollGeometryChange(for: CGFloat.self) { geo in
@@ -223,6 +211,32 @@ struct ContentView: View {
                 }
 
                 carousel
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var yearSectionsView: some View {
+        if !currentLogs.isEmpty {
+            VStack(spacing: 16) {
+                ForEach(Array(yearSections.enumerated()), id: \.element.year) { index, section in
+                    let yearLogs = section.summaries.flatMap { $0.logs }
+                    BreakdownsSection(
+                        year: section.year,
+                        summaries: section.summaries,
+                        currencySymbol: currencySymbol,
+                        onStatsTap: {
+                            statsYear = YearStatsData(year: section.year, logs: yearLogs)
+                        },
+                        onMonthTap: { summary in
+                            selectedMonthData = MonthSheetData(
+                                month: summary.month,
+                                logs: summary.logs
+                            )
+                        }
+                    )
+                    .padding(.top, index == 0 ? 16 : 0)
+                }
             }
         }
     }
@@ -254,6 +268,12 @@ struct ContentView: View {
 struct MonthSheetData: Identifiable {
     let id = UUID()
     let month: String
+    let logs: [LogEntry]
+}
+
+struct YearStatsData: Identifiable {
+    let id = UUID()
+    let year: Int
     let logs: [LogEntry]
 }
 
