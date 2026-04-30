@@ -320,7 +320,14 @@ struct VehicleHeroCard: View {
         }
         .frame(height: visibleHeight)
         .contentShape(RoundedRectangle(cornerRadius: PitstopRadius.card))
-        .onTapGesture { onRefuel() }
+        .onTapGesture { onPrimaryCardTap() }
+    }
+
+    private func onPrimaryCardTap() {
+        switch driveCategory {
+        case .ev: onCharge()
+        case .ice, .phev: onRefuel()
+        }
     }
 
     @ViewBuilder
@@ -371,13 +378,43 @@ struct VehicleHeroCard: View {
         }
     }
 
+    @ViewBuilder
     private var ctaButtons: some View {
-        PitstopCTAButton(
-            title: "Refuel",
-            icon: "fuelpump.fill",
-            action: onRefuel
-        )
-        .accessibilityIdentifier(ViewID.refuelCTA)
+        switch driveCategory {
+        case .ice:
+            PitstopCTAButton(
+                title: "Refuel",
+                icon: "fuelpump.fill",
+                style: .refuel,
+                action: onRefuel
+            )
+            .accessibilityIdentifier(ViewID.refuelCTA)
+        case .ev:
+            PitstopCTAButton(
+                title: "Recharge",
+                icon: "bolt.fill",
+                style: .recharge,
+                action: onCharge
+            )
+            .accessibilityIdentifier(ViewID.refuelCTA)
+        case .phev:
+            HStack(spacing: 8) {
+                PitstopCTAButton(
+                    title: "Refuel",
+                    icon: "fuelpump.fill",
+                    style: .refuel,
+                    action: onRefuel
+                )
+                .accessibilityIdentifier(ViewID.refuelCTA)
+
+                PitstopCTAButton(
+                    title: "Recharge",
+                    icon: "bolt.fill",
+                    style: .recharge,
+                    action: onCharge
+                )
+            }
+        }
     }
 
     private func formatCurrency(_ value: Double) -> String {
@@ -391,9 +428,33 @@ enum DriveCategory {
 
 // MARK: - CTA Button
 
+enum PitstopCTAStyle {
+    case refuel
+    case recharge
+
+    var gradient: [Color] {
+        switch self {
+        case .refuel:
+            return [
+                PitstopColor.ctaOlive.opacity(0.6),
+                PitstopColor.ctaOlive.opacity(0.3),
+                Color(hex: 0x5A7A6A).opacity(0.4)
+            ]
+        case .recharge:
+            // Teal/blue glassy tint matching the recharge mock.
+            return [
+                Color(hex: 0x2E6A8A).opacity(0.6),
+                Color(hex: 0x3A7A8A).opacity(0.35),
+                Color(hex: 0x4A8A95).opacity(0.4)
+            ]
+        }
+    }
+}
+
 struct PitstopCTAButton: View {
     let title: String
     let icon: String
+    var style: PitstopCTAStyle = .refuel
     let action: () -> Void
 
     var body: some View {
@@ -414,15 +475,11 @@ struct PitstopCTAButton: View {
                         .fill(.ultraThinMaterial)
                         .environment(\.colorScheme, .dark)
 
-                    // Gradient overlay for the olive-to-teal glossy tint
+                    // Glossy tint based on style.
                     Capsule()
                         .fill(
                             LinearGradient(
-                                colors: [
-                                    PitstopColor.ctaOlive.opacity(0.6),
-                                    PitstopColor.ctaOlive.opacity(0.3),
-                                    Color(hex: 0x5A7A6A).opacity(0.4)
-                                ],
+                                colors: style.gradient,
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
