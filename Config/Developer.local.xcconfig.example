@@ -1,0 +1,4 @@
+// Copy this file to Developer.local.xcconfig (drop the .example) and fill in your values.
+// Developer.local.xcconfig is gitignored.
+// DEVELOPMENT_TEAM = YOUR_TEAM_ID
+// PRODUCT_BUNDLE_IDENTIFIER = com.yourname.dziennikpokladowy

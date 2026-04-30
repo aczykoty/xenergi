@@ -7,3 +7,6 @@ DerivedData/
 
 # macOS
 .DS_Store
+
+# Per-developer xcconfig overrides
+Config/Developer.local.xcconfig
