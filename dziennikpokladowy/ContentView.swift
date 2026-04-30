@@ -16,13 +16,18 @@ struct ContentView: View {
     @State private var selectedMonthData: MonthSheetData? = nil
     @State private var scrollOffset: CGFloat = 0
     @State private var overscroll: CGFloat = 0
+    @State private var listAppeared: Bool = true
+    @State private var displayedCarId: UUID? = nil
 
     var selectedCar: Car? {
         data.cars.first(where: { $0.id == selectedCarId })
     }
 
     var currentLogs: [LogEntry] {
-        data.logs.filter { $0.carId == selectedCarId }.sorted { $0.date > $1.date }
+        // List uses displayedCarId so it can hold the previous car's data
+        // through the brief out-animation before swapping to the new car.
+        let listCarId = displayedCarId ?? selectedCarId
+        return data.logs.filter { $0.carId == listCarId }.sorted { $0.date > $1.date }
     }
 
     var currencySymbol: String {
@@ -74,6 +79,20 @@ struct ContentView: View {
         Calendar.current.component(.year, from: Date())
     }
 
+    private func openCurrentMonthSheet(for carId: UUID) {
+        let cal = Calendar.current
+        let now = Date()
+        let logs = data.logs
+            .filter { $0.carId == carId && cal.isDate($0.date, equalTo: now, toGranularity: .month) }
+            .sorted { $0.date > $1.date }
+        guard !logs.isEmpty else { return }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "LLLL yyyy"
+        formatter.locale = Locale.current
+        let monthLabel = formatter.string(from: now).capitalized
+        selectedMonthData = MonthSheetData(month: monthLabel, logs: logs)
+    }
+
     private var isDark: Bool { data.selectedTheme == .darkBlue }
     private var bgColor: Color { isDark ? Color(red: 10/255, green: 18/255, blue: 30/255) : PitstopColor.background }
     private var cardColor: Color { isDark ? Color(red: 20/255, green: 35/255, blue: 60/255) : PitstopColor.cardSurface }
@@ -88,11 +107,23 @@ struct ContentView: View {
         }
         .onAppear {
             if selectedCarId == nil { selectedCarId = data.cars.first?.id }
+            if displayedCarId == nil { displayedCarId = selectedCarId }
         }
         .onChange(of: data.cars) { _, newCars in
             if let id = selectedCarId, !newCars.contains(where: { $0.id == id }) {
                 selectedCarId = newCars.first?.id
             }
+        }
+        .task(id: selectedCarId) {
+            // Skip the animation on first render.
+            guard displayedCarId != nil, displayedCarId != selectedCarId else {
+                displayedCarId = selectedCarId
+                return
+            }
+            withAnimation { listAppeared = false }
+            try? await Task.sleep(for: .milliseconds(280))
+            displayedCarId = selectedCarId
+            withAnimation { listAppeared = true }
         }
         .sheet(isPresented: $showingSettings) { SettingsView(data: data) }
         .sheet(isPresented: $showingAddCar) { ManageCarsView(data: data, selectedCarId: $selectedCarId) }
@@ -152,10 +183,11 @@ struct ContentView: View {
             currencySymbol: currencySymbol,
             onRefuel: { activeEntryType = .fuel },
             onCharge: { activeEntryType = .charge },
-            onEditCar: { showingEditCar = true }
+            onEditCar: { showingEditCar = true },
+            onCurrentMonth: { carId in openCurrentMonthSheet(for: carId) }
         )
         let expandedHeight = carousel.expandedHeight
-        let dotsTopGap: CGFloat = 24
+        let dotsTopGap: CGFloat = 14
         let dotsReservedHeight: CGFloat = data.cars.count > 1 ? 28 + dotsTopGap : 0
 
         // Pick non-scrolling layout when content fits; fall back to the
@@ -171,7 +203,8 @@ struct ContentView: View {
                     currencySymbol: currencySymbol,
                     onRefuel: { activeEntryType = .fuel },
                     onCharge: { activeEntryType = .charge },
-                    onEditCar: { showingEditCar = true }
+                    onEditCar: { showingEditCar = true },
+                    onCurrentMonth: { carId in openCurrentMonthSheet(for: carId) }
                 )
 
                 if data.cars.count > 1 {
@@ -229,13 +262,29 @@ struct ContentView: View {
     @ViewBuilder
     private var yearSectionsView: some View {
         if !currentLogs.isEmpty {
-            VStack(spacing: 16) {
-                ForEach(Array(yearSections.enumerated()), id: \.element.year) { index, section in
+            // Build a flat list of month indices across all year sections so
+            // per-card stagger delays follow visual reading order regardless
+            // of which year a card belongs to.
+            let monthCountPrefix: [Int] = {
+                var counts: [Int] = []
+                var running = 0
+                for section in yearSections {
+                    counts.append(running)
+                    running += section.summaries.count
+                }
+                return counts
+            }()
+
+            VStack(spacing: 26) {
+                ForEach(Array(yearSections.enumerated()), id: \.element.year) { sectionIndex, section in
                     let yearLogs = section.summaries.flatMap { $0.logs }
+                    let baseIndex = monthCountPrefix[sectionIndex]
                     BreakdownsSection(
                         year: section.year,
                         summaries: section.summaries,
                         currencySymbol: currencySymbol,
+                        baseIndex: baseIndex,
+                        appeared: listAppeared,
                         onStatsTap: {
                             statsYear = YearStatsData(year: section.year, logs: yearLogs)
                         },
@@ -246,7 +295,7 @@ struct ContentView: View {
                             )
                         }
                     )
-                    .padding(.top, index == 0 ? 16 : 0)
+                    .padding(.top, sectionIndex == 0 ? 16 : 0)
                 }
             }
         }

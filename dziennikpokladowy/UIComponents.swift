@@ -45,6 +45,7 @@ struct VehicleHeroCarousel: View {
     var onRefuel: () -> Void
     var onCharge: () -> Void
     var onEditCar: () -> Void
+    var onCurrentMonth: (UUID) -> Void
 
     private static let peekWidth: CGFloat = 24
     private static let cardSpacing: CGFloat = 2
@@ -53,14 +54,24 @@ struct VehicleHeroCarousel: View {
     private static let collapsedSideInset: CGFloat = 16
     // Card collapses to a height that still fits the title capsule, a strip of
     // hero image, and the Refuel button anchored to the bottom edge.
-    static let collapsedHeight: CGFloat = 220
+    static let collapsedHeight: CGFloat = 260
 
-    // Side inset interpolates from peek (expanded) to a flat margin (collapsed).
-    private var sideInset: CGFloat {
-        Self.expandedSideInset + (Self.collapsedSideInset - Self.expandedSideInset) * scrollProgress
-    }
+    // Static side inset — horizontal scroll layout stays fixed regardless of
+    // vertical scroll progress. The width grow effect is applied as a
+    // separate scaleEffect on each card so it can't disrupt the horizontal
+    // scroll position or shift the centered card off-axis.
+    private var sideInset: CGFloat { Self.expandedSideInset }
 
     private var cardWidth: CGFloat { screenWidth - 2 * sideInset }
+
+    // How much wider the centered card should appear at full vertical scroll.
+    private var cardWidthScale: CGFloat {
+        let targetWidth = screenWidth - 2 * Self.collapsedSideInset
+        let baseWidth = screenWidth - 2 * Self.expandedSideInset
+        guard baseWidth > 0 else { return 1 }
+        let maxScale = targetWidth / baseWidth
+        return 1 + (maxScale - 1) * widthProgress
+    }
 
     var collapseDistance: CGFloat {
         max(expandedHeight - Self.collapsedHeight, 1)
@@ -68,6 +79,17 @@ struct VehicleHeroCarousel: View {
 
     var scrollProgress: CGFloat {
         min(max(scrollOffset / collapseDistance, 0), 1)
+    }
+
+    // Sibling fade runs in the first half of the scroll progress so peek
+    // cards are gone by the time the width starts widening.
+    private var siblingFadeProgress: CGFloat {
+        min(scrollProgress * 2, 1)
+    }
+
+    // Width animation kicks in only after siblings are mostly faded.
+    private var widthProgress: CGFloat {
+        max((scrollProgress - 0.5) * 2, 0)
     }
 
     // Use the static expanded layout to compute the natural full height —
@@ -82,10 +104,17 @@ struct VehicleHeroCarousel: View {
         expandedHeight + (Self.collapsedHeight - expandedHeight) * scrollProgress
     }
 
-    // Subtle compression at scroll-limit rubber-band — caps at ~3% scale.
-    private var rubberBandScale: CGFloat {
-        let amount = min(abs(overscroll), 120) / 120
-        return 1 - amount * 0.03
+    // Height- AND velocity-independent rubber-band so the bounce feels the
+    // same regardless of card size, list length, or fling speed.
+    // We square-root-compress the input so a hard fling doesn't produce a
+    // proportionally larger bounce than a gentle pull, then clamp the output
+    // to a small fixed maximum.
+    private var rubberBandOffset: CGFloat {
+        let sign: CGFloat = overscroll < 0 ? -1 : 1
+        let normalized = min(abs(overscroll) / 60, 1)        // saturates by 60pt of input
+        let damped = sqrt(normalized)                         // non-linear compression
+        let maxOut: CGFloat = sign < 0 ? 12 : 6               // top stretch a bit more visible than bottom
+        return -sign * damped * maxOut
     }
 
     var body: some View {
@@ -109,18 +138,26 @@ struct VehicleHeroCarousel: View {
                             selectedCarId = car.id
                             onCharge()
                         },
-                        onTap: {
+                        onTitleTap: {
                             selectedCarId = car.id
                             onEditCar()
+                        },
+                        onTotalTap: {
+                            selectedCarId = car.id
+                            onCurrentMonth(car.id)
                         }
                     )
                     .frame(width: cardWidth, height: effectiveHeight)
+                    // Width-grow is a per-card horizontal scale anchored to
+                    // center, fully independent from horizontal scroll layout.
+                    .scaleEffect(x: cardWidthScale, y: 1, anchor: .center)
                     .id(car.id)
                     .accessibilityIdentifier(ViewID.heroCard(car.id))
                     .scrollTransition(.interactive, axis: .horizontal) { content, phase in
-                        // As vertical scroll progresses, fade siblings out so
-                        // only the centered card remains visible at full width.
-                        let siblingFade = abs(phase.value) * scrollProgress
+                        // Sibling fade runs in the first half of the scroll
+                        // (siblingFadeProgress) so peek cards are gone before
+                        // the width transition begins.
+                        let siblingFade = abs(phase.value) * siblingFadeProgress
                         return content
                             .scaleEffect(
                                 x: 1 - abs(phase.value) * 0.1,
@@ -137,10 +174,10 @@ struct VehicleHeroCarousel: View {
         .scrollIndicators(.hidden)
         .contentMargins(.horizontal, sideInset, for: .scrollContent)
         .frame(height: effectiveHeight)
-        // Vertical-only squash on rubber-band so peek cards don't get pulled
-        // away from the screen edges.
-        .scaleEffect(x: 1, y: rubberBandScale, anchor: .top)
-        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: rubberBandScale)
+        // Height-independent rubber-band: translate vertically by a fixed
+        // pixel offset so all cards feel the same regardless of size.
+        .offset(y: rubberBandOffset)
+        .animation(.spring(response: 0.45, dampingFraction: 0.65), value: rubberBandOffset)
         .accessibilityIdentifier(ViewID.heroCarousel)
     }
 
@@ -163,7 +200,8 @@ struct VehicleHeroCard: View {
     let visibleHeight: CGFloat
     var onRefuel: () -> Void
     var onCharge: () -> Void
-    var onTap: () -> Void
+    var onTitleTap: () -> Void
+    var onTotalTap: () -> Void
 
     private var currentMonthName: String {
         let formatter = DateFormatter()
@@ -191,77 +229,87 @@ struct VehicleHeroCard: View {
 
     static let cardRatio: CGFloat = 320.0 / 430.0
 
+    // 0 when fully expanded, 1 when fully collapsed.
+    private var collapseProgress: CGFloat {
+        guard fullHeight > 0 else { return 0 }
+        return min(max((fullHeight - visibleHeight) / fullHeight, 0), 1)
+    }
+
     var body: some View {
         let inset = PitstopSpacing.cardInner * 0.5
 
         ZStack(alignment: .top) {
-            // Hero image + title — laid out at fullHeight, then clipped to
-            // visibleHeight from the top so the bottom is the only edge that moves.
-            ZStack {
-                heroImage
-                    .clipped()
+            // Hero image — always sized to the visible area and centered, so
+            // the car stays in the middle of the card as it collapses.
+            // A subtle zoom on collapse keeps the subject prominent.
+            heroImage
+                .frame(maxWidth: .infinity)
+                .frame(height: visibleHeight)
+                .scaleEffect(1 + collapseProgress * 0.08)
+                .clipShape(RoundedRectangle(cornerRadius: PitstopRadius.card))
 
-                VStack {
-                    Spacer()
-                    LinearGradient(
-                        colors: [.clear, .black.opacity(0.4)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: fullHeight * 0.35)
-                }
+            // Bottom gradient sized to the visible area.
+            VStack {
+                Spacer()
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.4)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: visibleHeight * 0.35)
+            }
+            .frame(height: visibleHeight)
+            .clipShape(RoundedRectangle(cornerRadius: PitstopRadius.card))
+            .allowsHitTesting(false)
 
-                VStack(spacing: 0) {
-                    HStack(alignment: .center) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(car.name)
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundColor(.white)
-                            if !car.licensePlate.isEmpty {
-                                Text(car.licensePlate.uppercased())
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.white.opacity(0.7))
-                            }
-                        }
-
-                        Spacer()
-
-                        Text(formatCurrency(monthTotal))
+            // Title capsule pinned to the top.
+            VStack(spacing: 0) {
+                HStack(alignment: .center, spacing: 0) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(car.name)
                             .font(.system(size: 18, weight: .bold))
                             .foregroundColor(.white)
-                    }
-                    .padding(.horizontal, 20)
-                    .frame(height: 64)
-                    .background(
-                        ZStack {
-                            Capsule()
-                                .fill(.ultraThinMaterial)
-                                .environment(\.colorScheme, .dark)
-                            Capsule()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [.white.opacity(0.12), .white.opacity(0.04)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                )
+                        if !car.licensePlate.isEmpty {
+                            Text(car.licensePlate.uppercased())
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.white.opacity(0.7))
                         }
-                    )
-                    .clipShape(Capsule())
+                    }
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onTitleTap() }
 
-                    Spacer()
+                    Spacer(minLength: 8)
+
+                    Text(formatCurrency(monthTotal))
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(maxHeight: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture { onTotalTap() }
                 }
-                .padding(inset)
+                .padding(.horizontal, 20)
+                .frame(height: 64)
+                .background(
+                    ZStack {
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                            .environment(\.colorScheme, .dark)
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [.white.opacity(0.12), .white.opacity(0.04)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                    }
+                )
+                .clipShape(Capsule())
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: fullHeight)
-            .frame(height: visibleHeight, alignment: .top)
-            .clipShape(RoundedRectangle(cornerRadius: PitstopRadius.card))
-            .contentShape(RoundedRectangle(cornerRadius: PitstopRadius.card))
-            .onTapGesture { onTap() }
+            .padding(inset)
 
-            // Refuel button anchored to the visible bottom edge — travels up
-            // as the card collapses and remains tappable.
+            // Refuel button anchored to the visible bottom edge.
             VStack {
                 Spacer()
                 ctaButtons
@@ -271,6 +319,8 @@ struct VehicleHeroCard: View {
             .frame(height: visibleHeight)
         }
         .frame(height: visibleHeight)
+        .contentShape(RoundedRectangle(cornerRadius: PitstopRadius.card))
+        .onTapGesture { onRefuel() }
     }
 
     @ViewBuilder
@@ -433,10 +483,15 @@ struct BreakdownsSection: View {
     let year: Int
     let summaries: [(month: String, totalCost: Double, fillupCount: Int, logs: [LogEntry])]
     let currencySymbol: String
+    var baseIndex: Int = 0
+    var appeared: Bool = true
     var onStatsTap: () -> Void
     var onMonthTap: ((month: String, totalCost: Double, fillupCount: Int, logs: [LogEntry])) -> Void
 
     private let cardPadding: CGFloat = 20
+    // 60ms between adjacent items so the cascade reads clearly without
+    // dragging on long lists.
+    private let perItemDelay: Double = 0.06
 
     var body: some View {
         VStack(alignment: .leading, spacing: PitstopSpacing.stack) {
@@ -451,8 +506,12 @@ struct BreakdownsSection: View {
                     .accessibilityIdentifier(ViewID.statsLink)
             }
             .padding(.horizontal, PitstopSpacing.pageHorizontal + cardPadding)
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 12)
+            .animation(staggerAnimation(globalIndex: baseIndex), value: appeared)
 
-            ForEach(summaries, id: \.month) { summary in
+            ForEach(Array(summaries.enumerated()), id: \.element.month) { localIndex, summary in
+                let globalIndex = baseIndex + localIndex + 1
                 MonthBreakdownCard(
                     summary: summary,
                     currencySymbol: currencySymbol,
@@ -460,6 +519,9 @@ struct BreakdownsSection: View {
                     onTap: { onMonthTap(summary) }
                 )
                 .accessibilityIdentifier(ViewID.monthCard(summary.month))
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 16)
+                .animation(staggerAnimation(globalIndex: globalIndex), value: appeared)
             }
         }
         .accessibilityIdentifier(ViewID.breakdownsSection)
@@ -468,6 +530,18 @@ struct BreakdownsSection: View {
     private func isCurrentMonth(_ summary: (month: String, totalCost: Double, fillupCount: Int, logs: [LogEntry])) -> Bool {
         guard let firstLog = summary.logs.first else { return false }
         return Calendar.current.isDate(firstLog.date, equalTo: Date(), toGranularity: .month)
+    }
+
+    // Forward stagger when entering (top → bottom), reverse when leaving so
+    // items closest to the bottom slide out first.
+    private func staggerAnimation(globalIndex: Int) -> Animation {
+        let delay = Double(globalIndex) * perItemDelay
+        if appeared {
+            return .spring(response: 0.55, dampingFraction: 0.85).delay(delay)
+        } else {
+            // Out is lighter than the in but still pronounced enough to read.
+            return .easeIn(duration: 0.28).delay(delay * 0.6)
+        }
     }
 }
 
@@ -503,15 +577,6 @@ struct MonthBreakdownCard: View {
                         .foregroundColor(PitstopColor.accentBlue)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    HStack(spacing: 4) {
-                        Image(systemName: "fuelpump.fill")
-                            .font(.system(size: 11))
-                            .foregroundColor(secondaryText)
-                        Text("\(summary.fillupCount)")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(secondaryText)
-                    }
-
                     Text(formatCurrency(summary.totalCost))
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(primaryText)
@@ -521,7 +586,16 @@ struct MonthBreakdownCard: View {
                 .padding(.vertical, 16)
 
                 if showLastTransaction, let last = lastTransaction {
-                    HStack {
+                    HStack(spacing: 8) {
+                        Text("NEW")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(secondaryText)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule()
+                                    .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06))
+                            )
                         Text(transactionMeta(last))
                             .font(.system(size: 13, weight: .regular))
                             .foregroundColor(secondaryText)
@@ -619,8 +693,22 @@ struct MonthTransactionsSheet: View {
                 .padding(.top, 16)
             }
             .background(bgColor.ignoresSafeArea())
-            .navigationTitle(month)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: 8) {
+                        Text(month)
+                            .font(.headline)
+                        HStack(spacing: 4) {
+                            Image(systemName: "fuelpump.fill")
+                                .font(.system(size: 11))
+                            Text("\(logs.count)")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .foregroundColor(.secondary)
+                    }
+                }
+            }
         }
         .presentationDetents([.medium, .large])
         .preferredColorScheme(isDark ? .dark : .light)
