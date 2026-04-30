@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var showingOdometerHistory = false
     @State private var selectedMonthData: MonthSheetData? = nil
     @State private var scrollOffset: CGFloat = 0
+    @State private var overscroll: CGFloat = 0
 
     var selectedCar: Car? {
         data.cars.first(where: { $0.id == selectedCarId })
@@ -144,6 +145,7 @@ struct ContentView: View {
         let carousel = VehicleHeroCarousel(
             screenWidth: screenWidth,
             scrollOffset: scrollOffset,
+            overscroll: overscroll,
             cars: data.cars,
             selectedCarId: $selectedCarId,
             logs: data.logs,
@@ -208,6 +210,15 @@ struct ContentView: View {
                     geo.contentOffset.y
                 } action: { _, newValue in
                     scrollOffset = max(newValue, 0)
+                }
+                .onScrollGeometryChange(for: CGFloat.self) { geo in
+                    // Negative when bouncing past top, positive when bouncing past bottom.
+                    let topOver = min(geo.contentOffset.y, 0)
+                    let maxOffset = geo.contentSize.height - geo.containerSize.height
+                    let bottomOver = max(geo.contentOffset.y - maxOffset, 0)
+                    return topOver + bottomOver
+                } action: { _, newValue in
+                    overscroll = newValue
                 }
 
                 carousel

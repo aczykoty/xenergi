@@ -37,6 +37,7 @@ struct PitstopTopBar: View {
 struct VehicleHeroCarousel: View {
     let screenWidth: CGFloat
     let scrollOffset: CGFloat
+    var overscroll: CGFloat = 0
     let cars: [Car]
     @Binding var selectedCarId: UUID?
     let logs: [LogEntry]
@@ -47,12 +48,19 @@ struct VehicleHeroCarousel: View {
 
     private static let peekWidth: CGFloat = 24
     private static let cardSpacing: CGFloat = 2
-    private static var sideInset: CGFloat { peekWidth + cardSpacing }
+    private static let expandedSideInset: CGFloat = peekWidth + cardSpacing
+    // Minimum side margin when the card is fully widened (no peek).
+    private static let collapsedSideInset: CGFloat = 16
     // Card collapses to a height that still fits the title capsule, a strip of
     // hero image, and the Refuel button anchored to the bottom edge.
     static let collapsedHeight: CGFloat = 220
 
-    private var cardWidth: CGFloat { screenWidth - 2 * Self.sideInset }
+    // Side inset interpolates from peek (expanded) to a flat margin (collapsed).
+    private var sideInset: CGFloat {
+        Self.expandedSideInset + (Self.collapsedSideInset - Self.expandedSideInset) * scrollProgress
+    }
+
+    private var cardWidth: CGFloat { screenWidth - 2 * sideInset }
 
     var collapseDistance: CGFloat {
         max(expandedHeight - Self.collapsedHeight, 1)
@@ -62,12 +70,22 @@ struct VehicleHeroCarousel: View {
         min(max(scrollOffset / collapseDistance, 0), 1)
     }
 
+    // Use the static expanded layout to compute the natural full height —
+    // height shouldn't depend on the dynamic sideInset (we animate height
+    // independently via effectiveHeight).
     var expandedHeight: CGFloat {
-        cardWidth / VehicleHeroCard.cardRatio
+        let baseWidth = screenWidth - 2 * Self.expandedSideInset
+        return baseWidth / VehicleHeroCard.cardRatio
     }
 
     var effectiveHeight: CGFloat {
         expandedHeight + (Self.collapsedHeight - expandedHeight) * scrollProgress
+    }
+
+    // Subtle compression at scroll-limit rubber-band — caps at ~3% scale.
+    private var rubberBandScale: CGFloat {
+        let amount = min(abs(overscroll), 120) / 120
+        return 1 - amount * 0.03
     }
 
     var body: some View {
@@ -100,12 +118,15 @@ struct VehicleHeroCarousel: View {
                     .id(car.id)
                     .accessibilityIdentifier(ViewID.heroCard(car.id))
                     .scrollTransition(.interactive, axis: .horizontal) { content, phase in
-                        content
+                        // As vertical scroll progresses, fade siblings out so
+                        // only the centered card remains visible at full width.
+                        let siblingFade = abs(phase.value) * scrollProgress
+                        return content
                             .scaleEffect(
                                 x: 1 - abs(phase.value) * 0.1,
                                 y: 1 - abs(phase.value) * 0.1
                             )
-                            .opacity(1 - abs(phase.value) * 0.15)
+                            .opacity((1 - abs(phase.value) * 0.15) * (1 - siblingFade))
                     }
                 }
             }
@@ -114,8 +135,12 @@ struct VehicleHeroCarousel: View {
         .scrollTargetBehavior(.viewAligned)
         .scrollPosition(id: $selectedCarId, anchor: .center)
         .scrollIndicators(.hidden)
-        .contentMargins(.horizontal, Self.sideInset, for: .scrollContent)
+        .contentMargins(.horizontal, sideInset, for: .scrollContent)
         .frame(height: effectiveHeight)
+        // Vertical-only squash on rubber-band so peek cards don't get pulled
+        // away from the screen edges.
+        .scaleEffect(x: 1, y: rubberBandScale, anchor: .top)
+        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: rubberBandScale)
         .accessibilityIdentifier(ViewID.heroCarousel)
     }
 
