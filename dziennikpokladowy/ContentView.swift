@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var showingCostBreakdown = false
     @State private var showingOdometerHistory = false
     @State private var selectedMonthData: MonthSheetData? = nil
+    @State private var scrollOffset: CGFloat = 0
 
     var selectedCar: Car? {
         data.cars.first(where: { $0.id == selectedCarId })
@@ -67,69 +68,8 @@ struct ContentView: View {
         ZStack {
             bgColor.ignoresSafeArea()
 
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 0) {
-                    PitstopTopBar(
-                        onSettings: { showingSettings = true }
-                    )
-                    .padding(.horizontal, PitstopSpacing.pageHorizontal)
-                    .padding(.bottom, 16)
-
-                    if !data.cars.isEmpty {
-                        VehicleHeroCarousel(
-                            cars: data.cars,
-                            selectedCarId: $selectedCarId,
-                            logs: data.logs,
-                            currencySymbol: currencySymbol,
-                            onRefuel: { activeEntryType = .fuel },
-                            onCharge: { activeEntryType = .charge },
-                            onEditCar: { showingEditCar = true }
-                        )
-
-                        PitstopPageDots(
-                            count: data.cars.count,
-                            currentIndex: currentCarIndex
-                        )
-                        .padding(.top, 16)
-                    } else {
-                        Button(action: { showingAddCar = true }) {
-                            VStack(spacing: 12) {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 40))
-                                    .foregroundColor(isDark ? .white.opacity(0.3) : PitstopColor.textSecondary.opacity(0.4))
-                                Text("Add your first vehicle")
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundColor(isDark ? .gray : PitstopColor.textSecondary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 200)
-                            .background(cardColor)
-                            .cornerRadius(PitstopRadius.card)
-                            .padding(.horizontal, PitstopSpacing.pageHorizontal)
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        .accessibilityIdentifier(ViewID.emptyState)
-                    }
-
-                    if !currentLogs.isEmpty {
-                        BreakdownsSection(
-                            year: currentYear,
-                            summaries: monthSummaries,
-                            currencySymbol: currencySymbol,
-                            onStatsTap: { showingStats = true },
-                            onMonthTap: { summary in
-                                selectedMonthData = MonthSheetData(
-                                    month: summary.month,
-                                    logs: summary.logs
-                                )
-                            }
-                        )
-                        .padding(.top, 24)
-                    }
-
-                    Spacer(minLength: 40)
-                }
-                .padding(.vertical)
+            GeometryReader { geometry in
+                mainContent(screenWidth: geometry.size.width)
             }
         }
         .onAppear {
@@ -168,6 +108,146 @@ struct ContentView: View {
             )
         }
         .preferredColorScheme(isDark ? .dark : .light)
+    }
+
+    @ViewBuilder
+    private func mainContent(screenWidth: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            PitstopTopBar(onSettings: { showingSettings = true })
+                .padding(.horizontal, PitstopSpacing.pageHorizontal)
+                .padding(.bottom, 12)
+                .padding(.top, 8)
+
+            if !data.cars.isEmpty {
+                carouselWithList(screenWidth: screenWidth)
+            } else {
+                emptyState
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func carouselWithList(screenWidth: CGFloat) -> some View {
+        let carousel = VehicleHeroCarousel(
+            screenWidth: screenWidth,
+            scrollOffset: scrollOffset,
+            cars: data.cars,
+            selectedCarId: $selectedCarId,
+            logs: data.logs,
+            currencySymbol: currencySymbol,
+            onRefuel: { activeEntryType = .fuel },
+            onCharge: { activeEntryType = .charge },
+            onEditCar: { showingEditCar = true }
+        )
+        let expandedHeight = carousel.expandedHeight
+        let dotsReservedHeight: CGFloat = data.cars.count > 1 ? 28 : 0
+
+        // Pick non-scrolling layout when content fits; fall back to the
+        // scroll-collapse layout when the list overflows.
+        ViewThatFits(in: .vertical) {
+            VStack(spacing: 0) {
+                VehicleHeroCarousel(
+                    screenWidth: screenWidth,
+                    scrollOffset: 0,
+                    cars: data.cars,
+                    selectedCarId: $selectedCarId,
+                    logs: data.logs,
+                    currencySymbol: currencySymbol,
+                    onRefuel: { activeEntryType = .fuel },
+                    onCharge: { activeEntryType = .charge },
+                    onEditCar: { showingEditCar = true }
+                )
+
+                if data.cars.count > 1 {
+                    PitstopPageDots(
+                        count: data.cars.count,
+                        currentIndex: currentCarIndex
+                    )
+                    .frame(maxWidth: .infinity)
+                    .frame(height: dotsReservedHeight)
+                }
+
+                if !currentLogs.isEmpty {
+                    BreakdownsSection(
+                        year: currentYear,
+                        summaries: monthSummaries,
+                        currencySymbol: currencySymbol,
+                        onStatsTap: { showingStats = true },
+                        onMonthTap: { summary in
+                            selectedMonthData = MonthSheetData(
+                                month: summary.month,
+                                logs: summary.logs
+                            )
+                        }
+                    )
+                    .padding(.top, 16)
+                }
+            }
+            .onAppear { scrollOffset = 0 }
+
+            ZStack(alignment: .top) {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        Color.clear.frame(height: expandedHeight)
+
+                        if data.cars.count > 1 {
+                            PitstopPageDots(
+                                count: data.cars.count,
+                                currentIndex: currentCarIndex
+                            )
+                            .frame(maxWidth: .infinity)
+                            .frame(height: dotsReservedHeight)
+                        }
+
+                        if !currentLogs.isEmpty {
+                            BreakdownsSection(
+                                year: currentYear,
+                                summaries: monthSummaries,
+                                currencySymbol: currencySymbol,
+                                onStatsTap: { showingStats = true },
+                                onMonthTap: { summary in
+                                    selectedMonthData = MonthSheetData(
+                                        month: summary.month,
+                                        logs: summary.logs
+                                    )
+                                }
+                            )
+                            .padding(.top, 16)
+                        }
+                    }
+                }
+                .onScrollGeometryChange(for: CGFloat.self) { geo in
+                    geo.contentOffset.y
+                } action: { _, newValue in
+                    scrollOffset = max(newValue, 0)
+                }
+
+                carousel
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var emptyState: some View {
+        Spacer()
+        Button(action: { showingAddCar = true }) {
+            VStack(spacing: 12) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 40))
+                    .foregroundColor(isDark ? .white.opacity(0.3) : PitstopColor.textSecondary.opacity(0.4))
+                Text("Add your first vehicle")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(isDark ? .gray : PitstopColor.textSecondary)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 200)
+            .background(cardColor)
+            .cornerRadius(PitstopRadius.card)
+            .padding(.horizontal, PitstopSpacing.pageHorizontal)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .accessibilityIdentifier(ViewID.emptyState)
+        Spacer()
     }
 }
 

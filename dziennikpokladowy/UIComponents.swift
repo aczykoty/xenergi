@@ -35,6 +35,8 @@ struct PitstopTopBar: View {
 // MARK: - Vehicle Hero Carousel
 
 struct VehicleHeroCarousel: View {
+    let screenWidth: CGFloat
+    let scrollOffset: CGFloat
     let cars: [Car]
     @Binding var selectedCarId: UUID?
     let logs: [LogEntry]
@@ -43,62 +45,77 @@ struct VehicleHeroCarousel: View {
     var onCharge: () -> Void
     var onEditCar: () -> Void
 
-    private static let peekWidth: CGFloat = 25
-    private static let cardSpacing: CGFloat = 1
+    private static let peekWidth: CGFloat = 24
+    private static let cardSpacing: CGFloat = 2
     private static var sideInset: CGFloat { peekWidth + cardSpacing }
+    // Card collapses to a height that still fits the title capsule, a strip of
+    // hero image, and the Refuel button anchored to the bottom edge.
+    static let collapsedHeight: CGFloat = 220
 
-    private var isSingleCard: Bool { cars.count <= 1 }
-    private var inset: CGFloat { isSingleCard ? PitstopSpacing.pageHorizontal : Self.sideInset }
+    private var cardWidth: CGFloat { screenWidth - 2 * Self.sideInset }
+
+    var collapseDistance: CGFloat {
+        max(expandedHeight - Self.collapsedHeight, 1)
+    }
+
+    var scrollProgress: CGFloat {
+        min(max(scrollOffset / collapseDistance, 0), 1)
+    }
+
+    var expandedHeight: CGFloat {
+        cardWidth / VehicleHeroCard.cardRatio
+    }
+
+    var effectiveHeight: CGFloat {
+        expandedHeight + (Self.collapsedHeight - expandedHeight) * scrollProgress
+    }
 
     var body: some View {
-        GeometryReader { proxy in
-            let screenWidth = proxy.size.width
-            let cardWidth = screenWidth - 2 * inset
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: Self.cardSpacing) {
+                ForEach(cars) { car in
+                    let carLogs = logs.filter { $0.carId == car.id }
+                    let monthTotal = currentMonthTotal(for: carLogs)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: Self.cardSpacing) {
-                    ForEach(cars) { car in
-                        let carLogs = logs.filter { $0.carId == car.id }
-                        let monthTotal = currentMonthTotal(for: carLogs)
-
-                        VehicleHeroCard(
-                            car: car,
-                            monthTotal: monthTotal,
-                            currencySymbol: currencySymbol,
-                            onRefuel: {
-                                selectedCarId = car.id
-                                onRefuel()
-                            },
-                            onCharge: {
-                                selectedCarId = car.id
-                                onCharge()
-                            },
-                            onTap: {
-                                selectedCarId = car.id
-                                onEditCar()
-                            }
-                        )
-                        .frame(width: cardWidth)
-                        .id(car.id)
-                        .accessibilityIdentifier(ViewID.heroCard(car.id))
-                        .scrollTransition(.interactive, axis: .horizontal) { content, phase in
-                            content
-                                .scaleEffect(
-                                    x: 1 - abs(phase.value) * 0.1,
-                                    y: 1 - abs(phase.value) * 0.1
-                                )
-                                .opacity(1 - abs(phase.value) * 0.15)
+                    VehicleHeroCard(
+                        car: car,
+                        monthTotal: monthTotal,
+                        currencySymbol: currencySymbol,
+                        fullHeight: expandedHeight,
+                        visibleHeight: effectiveHeight,
+                        onRefuel: {
+                            selectedCarId = car.id
+                            onRefuel()
+                        },
+                        onCharge: {
+                            selectedCarId = car.id
+                            onCharge()
+                        },
+                        onTap: {
+                            selectedCarId = car.id
+                            onEditCar()
                         }
+                    )
+                    .frame(width: cardWidth, height: effectiveHeight)
+                    .id(car.id)
+                    .accessibilityIdentifier(ViewID.heroCard(car.id))
+                    .scrollTransition(.interactive, axis: .horizontal) { content, phase in
+                        content
+                            .scaleEffect(
+                                x: 1 - abs(phase.value) * 0.1,
+                                y: 1 - abs(phase.value) * 0.1
+                            )
+                            .opacity(1 - abs(phase.value) * 0.15)
                     }
                 }
-                .scrollTargetLayout()
             }
-            .scrollTargetBehavior(.viewAligned)
-            .scrollPosition(id: $selectedCarId, anchor: .center)
-            .scrollIndicators(.hidden)
-            .contentMargins(.horizontal, inset, for: .scrollContent)
-            .frame(height: (screenWidth - 2 * inset) / VehicleHeroCard.cardRatio)
+            .scrollTargetLayout()
         }
+        .scrollTargetBehavior(.viewAligned)
+        .scrollPosition(id: $selectedCarId, anchor: .center)
+        .scrollIndicators(.hidden)
+        .contentMargins(.horizontal, Self.sideInset, for: .scrollContent)
+        .frame(height: effectiveHeight)
         .accessibilityIdentifier(ViewID.heroCarousel)
     }
 
@@ -117,6 +134,8 @@ struct VehicleHeroCard: View {
     let car: Car
     let monthTotal: Double
     let currencySymbol: String
+    let fullHeight: CGFloat
+    let visibleHeight: CGFloat
     var onRefuel: () -> Void
     var onCharge: () -> Void
     var onTap: () -> Void
@@ -148,16 +167,15 @@ struct VehicleHeroCard: View {
     static let cardRatio: CGFloat = 320.0 / 430.0
 
     var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let h = w / Self.cardRatio
+        let inset = PitstopSpacing.cardInner * 0.5
 
+        ZStack(alignment: .top) {
+            // Hero image + title — laid out at fullHeight, then clipped to
+            // visibleHeight from the top so the bottom is the only edge that moves.
             ZStack {
                 heroImage
-                    .frame(width: w, height: h)
                     .clipped()
 
-                // Bottom gradient scrim for CTA legibility
                 VStack {
                     Spacer()
                     LinearGradient(
@@ -165,12 +183,10 @@ struct VehicleHeroCard: View {
                         startPoint: .top,
                         endPoint: .bottom
                     )
-                    .frame(height: h * 0.35)
+                    .frame(height: fullHeight * 0.35)
                 }
 
-                // Content overlay
                 VStack(spacing: 0) {
-                    // Glossy header bar
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(car.name)
@@ -209,16 +225,27 @@ struct VehicleHeroCard: View {
                     .clipShape(Capsule())
 
                     Spacer()
-
-                    ctaButtons
                 }
-                .padding(PitstopSpacing.cardInner * 0.5)
+                .padding(inset)
             }
-            .frame(width: w, height: h)
+            .frame(maxWidth: .infinity)
+            .frame(height: fullHeight)
+            .frame(height: visibleHeight, alignment: .top)
+            .clipShape(RoundedRectangle(cornerRadius: PitstopRadius.card))
+            .contentShape(RoundedRectangle(cornerRadius: PitstopRadius.card))
+            .onTapGesture { onTap() }
+
+            // Refuel button anchored to the visible bottom edge — travels up
+            // as the card collapses and remains tappable.
+            VStack {
+                Spacer()
+                ctaButtons
+                    .padding(.horizontal, inset)
+                    .padding(.bottom, inset)
+            }
+            .frame(height: visibleHeight)
         }
-        .aspectRatio(Self.cardRatio, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: PitstopRadius.card))
-        .onTapGesture { onTap() }
+        .frame(height: visibleHeight)
     }
 
     @ViewBuilder
@@ -400,10 +427,11 @@ struct BreakdownsSection: View {
             }
             .padding(.horizontal, PitstopSpacing.pageHorizontal + cardPadding)
 
-            ForEach(summaries, id: \.month) { summary in
+            ForEach(Array(summaries.enumerated()), id: \.element.month) { index, summary in
                 MonthBreakdownCard(
                     summary: summary,
                     currencySymbol: currencySymbol,
+                    showLastTransaction: index == 0,
                     onTap: { onMonthTap(summary) }
                 )
                 .accessibilityIdentifier(ViewID.monthCard(summary.month))
@@ -419,6 +447,7 @@ struct MonthBreakdownCard: View {
     @EnvironmentObject var data: AppData
     let summary: (month: String, totalCost: Double, fillupCount: Int, logs: [LogEntry])
     let currencySymbol: String
+    var showLastTransaction: Bool = true
     var onTap: () -> Void
 
     private let cardPadding: CGFloat = 20
@@ -461,7 +490,7 @@ struct MonthBreakdownCard: View {
                 .padding(.horizontal, cardPadding)
                 .padding(.vertical, 16)
 
-                if let last = lastTransaction {
+                if showLastTransaction, let last = lastTransaction {
                     HStack {
                         Text(transactionMeta(last))
                             .font(.system(size: 13, weight: .regular))
