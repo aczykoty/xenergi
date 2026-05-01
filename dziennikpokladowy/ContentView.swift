@@ -14,8 +14,6 @@ struct ContentView: View {
     @State private var showingCostBreakdown = false
     @State private var showingOdometerHistory = false
     @State private var selectedMonthData: MonthSheetData? = nil
-    @State private var scrollOffset: CGFloat = 0
-    @State private var overscroll: CGFloat = 0
     @State private var listAppeared: Bool = true
     @State private var displayedCarId: UUID? = nil
 
@@ -43,28 +41,28 @@ struct ContentView: View {
         return data.cars.firstIndex(where: { $0.id == id }) ?? 0
     }
 
-    private var monthSummaries: [(month: String, totalCost: Double, fillupCount: Int, logs: [LogEntry])] {
+    private var monthSummaries: [MonthSummary] {
         let formatter = DateFormatter()
         formatter.dateFormat = "LLLL yyyy"
         formatter.locale = Locale.current
 
-        var result: [(String, Double, Int, [LogEntry])] = []
+        var result: [MonthSummary] = []
         for log in currentLogs {
             let monthYear = formatter.string(from: log.date).capitalized
-            if let lastIndex = result.indices.last, result[lastIndex].0 == monthYear {
-                result[lastIndex].1 += log.totalCost
-                result[lastIndex].2 += 1
-                result[lastIndex].3.append(log)
+            if let lastIndex = result.indices.last, result[lastIndex].month == monthYear {
+                result[lastIndex].totalCost += log.totalCost
+                result[lastIndex].fillupCount += 1
+                result[lastIndex].logs.append(log)
             } else {
-                result.append((monthYear, log.totalCost, 1, [log]))
+                result.append((month: monthYear, totalCost: log.totalCost, fillupCount: 1, logs: [log]))
             }
         }
-        return result.map { (month: $0.0, totalCost: $0.1, fillupCount: $0.2, logs: $0.3) }
+        return result
     }
 
-    private var yearSections: [(year: Int, summaries: [(month: String, totalCost: Double, fillupCount: Int, logs: [LogEntry])])] {
+    private var yearSections: [YearSection] {
         let cal = Calendar.current
-        var grouped: [Int: [(month: String, totalCost: Double, fillupCount: Int, logs: [LogEntry])]] = [:]
+        var grouped: [Int: [MonthSummary]] = [:]
         for summary in monthSummaries {
             guard let firstLog = summary.logs.first else { continue }
             let year = cal.component(.year, from: firstLog.date)
@@ -173,132 +171,37 @@ struct ContentView: View {
 
     @ViewBuilder
     private func carouselWithList(screenWidth: CGFloat) -> some View {
-        let carousel = VehicleHeroCarousel(
+        // Scroll state lives in CarouselListContainer so vertical scroll updates
+        // do not invalidate ContentView.body — keeps month/year aggregations and
+        // the list of children stable while the user scrolls.
+        CarouselListContainer(
             screenWidth: screenWidth,
-            scrollOffset: scrollOffset,
-            overscroll: overscroll,
             cars: data.cars,
             selectedCarId: $selectedCarId,
             logs: data.logs,
             currencySymbol: currencySymbol,
+            currentCarIndex: currentCarIndex,
+            yearSections: yearSections,
+            monthCountPrefix: monthCountPrefix,
+            hasLogs: !currentLogs.isEmpty,
+            listAppeared: listAppeared,
             onRefuel: { activeEntryType = .fuel },
             onCharge: { activeEntryType = .charge },
             onEditCar: { showingEditCar = true },
-            onCurrentMonth: { carId in openCurrentMonthSheet(for: carId) }
+            onCurrentMonth: { carId in openCurrentMonthSheet(for: carId) },
+            onStatsTap: { year, logs in statsYear = YearStatsData(year: year, logs: logs) },
+            onMonthTap: { month, logs in selectedMonthData = MonthSheetData(month: month, logs: logs) }
         )
-        let expandedHeight = carousel.expandedHeight
-        let dotsTopGap: CGFloat = 14
-        let dotsReservedHeight: CGFloat = data.cars.count > 1 ? 28 + dotsTopGap : 0
-
-        // Pick non-scrolling layout when content fits; fall back to the
-        // scroll-collapse layout when the list overflows.
-        ViewThatFits(in: .vertical) {
-            VStack(spacing: 0) {
-                VehicleHeroCarousel(
-                    screenWidth: screenWidth,
-                    scrollOffset: 0,
-                    cars: data.cars,
-                    selectedCarId: $selectedCarId,
-                    logs: data.logs,
-                    currencySymbol: currencySymbol,
-                    onRefuel: { activeEntryType = .fuel },
-                    onCharge: { activeEntryType = .charge },
-                    onEditCar: { showingEditCar = true },
-                    onCurrentMonth: { carId in openCurrentMonthSheet(for: carId) }
-                )
-
-                if data.cars.count > 1 {
-                    PitstopPageDots(
-                        count: data.cars.count,
-                        currentIndex: currentCarIndex
-                    )
-                    .padding(.top, dotsTopGap)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: dotsReservedHeight)
-                }
-
-                yearSectionsView
-            }
-            .onAppear { scrollOffset = 0 }
-
-            ZStack(alignment: .top) {
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 0) {
-                        Color.clear.frame(height: expandedHeight)
-
-                        if data.cars.count > 1 {
-                            PitstopPageDots(
-                                count: data.cars.count,
-                                currentIndex: currentCarIndex
-                            )
-                            .padding(.top, dotsTopGap)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: dotsReservedHeight)
-                        }
-
-                        yearSectionsView
-                    }
-                }
-                .onScrollGeometryChange(for: CGFloat.self) { geo in
-                    geo.contentOffset.y
-                } action: { _, newValue in
-                    scrollOffset = max(newValue, 0)
-                }
-                .onScrollGeometryChange(for: CGFloat.self) { geo in
-                    // Negative when bouncing past top, positive when bouncing past bottom.
-                    let topOver = min(geo.contentOffset.y, 0)
-                    let maxOffset = geo.contentSize.height - geo.containerSize.height
-                    let bottomOver = max(geo.contentOffset.y - maxOffset, 0)
-                    return topOver + bottomOver
-                } action: { _, newValue in
-                    overscroll = newValue
-                }
-
-                carousel
-            }
-        }
     }
 
-    @ViewBuilder
-    private var yearSectionsView: some View {
-        if !currentLogs.isEmpty {
-            // Build a flat list of month indices across all year sections so
-            // per-card stagger delays follow visual reading order regardless
-            // of which year a card belongs to.
-            let monthCountPrefix: [Int] = {
-                var counts: [Int] = []
-                var running = 0
-                for section in yearSections {
-                    counts.append(running)
-                    running += section.summaries.count
-                }
-                return counts
-            }()
-
-            VStack(spacing: 26) {
-                ForEach(Array(yearSections.enumerated()), id: \.element.year) { sectionIndex, section in
-                    let yearLogs = section.summaries.flatMap { $0.logs }
-                    let baseIndex = monthCountPrefix[sectionIndex]
-                    BreakdownsSection(
-                        year: section.year,
-                        summaries: section.summaries,
-                        currencySymbol: currencySymbol,
-                        baseIndex: baseIndex,
-                        appeared: listAppeared,
-                        onStatsTap: {
-                            statsYear = YearStatsData(year: section.year, logs: yearLogs)
-                        },
-                        onMonthTap: { summary in
-                            selectedMonthData = MonthSheetData(
-                                month: summary.month,
-                                logs: summary.logs
-                            )
-                        }
-                    )
-                    .padding(.top, sectionIndex == 0 ? 16 : 0)
-                }
-            }
+    private var monthCountPrefix: [Int] {
+        var counts: [Int] = []
+        var running = 0
+        for section in yearSections {
+            counts.append(running)
+            running += section.summaries.count
         }
+        return counts
     }
 
     @ViewBuilder

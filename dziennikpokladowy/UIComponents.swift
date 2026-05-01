@@ -1,4 +1,31 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
+
+// MARK: - Car Image Cache
+//
+// UIImage(data:) decodes the JPEG/PNG payload on every call, which is
+// expensive enough to drop frames during scroll when the carousel re-renders.
+// We cache decoded images by their backing Data so repeated renders are O(1).
+// NSCache evicts under memory pressure automatically.
+private enum CarImageCache {
+    static let shared: NSCache<NSData, UIImage> = {
+        let cache = NSCache<NSData, UIImage>()
+        cache.countLimit = 32
+        return cache
+    }()
+
+    static func image(for data: Data) -> UIImage? {
+        let key = data as NSData
+        if let cached = shared.object(forKey: key) {
+            return cached
+        }
+        guard let image = UIImage(data: data) else { return nil }
+        shared.setObject(image, forKey: key)
+        return image
+    }
+}
 
 // MARK: - Pitstop Top Bar
 
@@ -29,6 +56,193 @@ struct PitstopTopBar: View {
             .accessibilityIdentifier(ViewID.settingsButton)
         }
         .accessibilityIdentifier(ViewID.topBar)
+    }
+}
+
+// MARK: - Year / Month Aggregation Types
+
+typealias MonthSummary = (month: String, totalCost: Double, fillupCount: Int, logs: [LogEntry])
+typealias YearSection = (year: Int, summaries: [MonthSummary])
+
+// MARK: - Carousel + List Container
+//
+// Owns scroll state locally so vertical scroll updates don't bubble up to
+// ContentView and invalidate its body (which would re-run aggregations and
+// rebuild the entire view tree on every scroll frame).
+
+struct CarouselListContainer: View {
+    let screenWidth: CGFloat
+    let cars: [Car]
+    @Binding var selectedCarId: UUID?
+    let logs: [LogEntry]
+    let currencySymbol: String
+    let currentCarIndex: Int
+    let yearSections: [YearSection]
+    let monthCountPrefix: [Int]
+    let hasLogs: Bool
+    let listAppeared: Bool
+    var onRefuel: () -> Void
+    var onCharge: () -> Void
+    var onEditCar: () -> Void
+    var onCurrentMonth: (UUID) -> Void
+    var onStatsTap: (Int, [LogEntry]) -> Void
+    var onMonthTap: (String, [LogEntry]) -> Void
+
+    @State private var scrollOffset: CGFloat = 0
+    @State private var overscroll: CGFloat = 0
+
+    private static let dotsTopGap: CGFloat = 14
+
+    private var dotsReservedHeight: CGFloat {
+        cars.count > 1 ? 28 + Self.dotsTopGap : 0
+    }
+
+    var body: some View {
+        let carousel = VehicleHeroCarousel(
+            screenWidth: screenWidth,
+            scrollOffset: scrollOffset,
+            overscroll: overscroll,
+            cars: cars,
+            selectedCarId: $selectedCarId,
+            logs: logs,
+            currencySymbol: currencySymbol,
+            onRefuel: onRefuel,
+            onCharge: onCharge,
+            onEditCar: onEditCar,
+            onCurrentMonth: onCurrentMonth
+        )
+        let expandedHeight = carousel.expandedHeight
+
+        ViewThatFits(in: .vertical) {
+            // Non-scrolling layout — fits without scrolling, no offset tracking
+            // needed.
+            VStack(spacing: 0) {
+                VehicleHeroCarousel(
+                    screenWidth: screenWidth,
+                    scrollOffset: 0,
+                    cars: cars,
+                    selectedCarId: $selectedCarId,
+                    logs: logs,
+                    currencySymbol: currencySymbol,
+                    onRefuel: onRefuel,
+                    onCharge: onCharge,
+                    onEditCar: onEditCar,
+                    onCurrentMonth: onCurrentMonth
+                )
+
+                if cars.count > 1 {
+                    PitstopPageDots(count: cars.count, currentIndex: currentCarIndex)
+                        .padding(.top, Self.dotsTopGap)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: dotsReservedHeight)
+                }
+
+                YearSectionsList(
+                    yearSections: yearSections,
+                    monthCountPrefix: monthCountPrefix,
+                    currencySymbol: currencySymbol,
+                    listAppeared: listAppeared,
+                    hasLogs: hasLogs,
+                    onStatsTap: onStatsTap,
+                    onMonthTap: onMonthTap
+                )
+            }
+
+            // Scrolling layout — tracks offset locally and feeds the carousel
+            // overlay.
+            ZStack(alignment: .top) {
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(spacing: 0) {
+                            Color.clear
+                                .frame(height: expandedHeight)
+                                .id(Self.topAnchorID)
+
+                            if cars.count > 1 {
+                                PitstopPageDots(count: cars.count, currentIndex: currentCarIndex)
+                                    .padding(.top, Self.dotsTopGap)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: dotsReservedHeight)
+                            }
+
+                            YearSectionsList(
+                                yearSections: yearSections,
+                                monthCountPrefix: monthCountPrefix,
+                                currencySymbol: currencySymbol,
+                                listAppeared: listAppeared,
+                                hasLogs: hasLogs,
+                                onStatsTap: onStatsTap,
+                                onMonthTap: onMonthTap
+                            )
+                        }
+                    }
+                    .onScrollGeometryChange(for: CGFloat.self) { geo in
+                        geo.contentOffset.y
+                    } action: { _, newValue in
+                        let clamped = max(newValue, 0)
+                        if clamped != scrollOffset { scrollOffset = clamped }
+                    }
+                    .onScrollGeometryChange(for: CGFloat.self) { geo in
+                        let topOver = min(geo.contentOffset.y, 0)
+                        let maxOffset = geo.contentSize.height - geo.containerSize.height
+                        let bottomOver = max(geo.contentOffset.y - maxOffset, 0)
+                        return topOver + bottomOver
+                    } action: { _, newValue in
+                        if newValue != overscroll { overscroll = newValue }
+                    }
+                    // Smoothly return the carousel to its expanded state when
+                    // the user swipes to a different car. Without this the
+                    // collapse height carries over from the previous car and
+                    // the new card's frame jumps as ViewThatFits / list
+                    // contents settle into the new car's data.
+                    .onChange(of: selectedCarId) { _, _ in
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                            proxy.scrollTo(Self.topAnchorID, anchor: .top)
+                        }
+                    }
+                }
+
+                carousel
+            }
+        }
+    }
+
+    private static let topAnchorID = "carousel_top_anchor"
+}
+
+// Standalone subview so SwiftUI can short-circuit redraws when the parent
+// CarouselListContainer's scrollOffset/overscroll change but list inputs
+// haven't.
+private struct YearSectionsList: View {
+    let yearSections: [YearSection]
+    let monthCountPrefix: [Int]
+    let currencySymbol: String
+    let listAppeared: Bool
+    let hasLogs: Bool
+    let onStatsTap: (Int, [LogEntry]) -> Void
+    let onMonthTap: (String, [LogEntry]) -> Void
+
+    var body: some View {
+        if hasLogs {
+            VStack(spacing: 26) {
+                ForEach(Array(yearSections.enumerated()), id: \.element.year) { sectionIndex, section in
+                    let yearLogs = section.summaries.flatMap { $0.logs }
+                    let baseIndex = monthCountPrefix[sectionIndex]
+                    BreakdownsSection(
+                        year: section.year,
+                        summaries: section.summaries,
+                        currencySymbol: currencySymbol,
+                        baseIndex: baseIndex,
+                        appeared: listAppeared,
+                        onStatsTap: { onStatsTap(section.year, yearLogs) },
+                        onMonthTap: { summary in
+                            onMonthTap(summary.month, summary.logs)
+                        }
+                    )
+                    .padding(.top, sectionIndex == 0 ? 16 : 0)
+                }
+            }
+        }
     }
 }
 
@@ -117,11 +331,31 @@ struct VehicleHeroCarousel: View {
         return -sign * damped * maxOut
     }
 
+    // Pre-group logs by car once per body pass so the ForEach can do an O(1)
+    // dictionary lookup instead of filtering the full logs array per card on
+    // every scroll frame.
+    private var logsByCar: [UUID: [LogEntry]] {
+        var grouped: [UUID: [LogEntry]] = [:]
+        grouped.reserveCapacity(cars.count)
+        for log in logs {
+            grouped[log.carId, default: []].append(log)
+        }
+        return grouped
+    }
+
     var body: some View {
+        // Snapshot scroll-derived values once so the ForEach closure captures
+        // plain CGFloats instead of re-reading computed properties per card.
+        let widthScale = cardWidthScale
+        let frameHeight = effectiveHeight
+        let frameWidth = cardWidth
+        let siblingFade = siblingFadeProgress
+        let groupedLogs = logsByCar
+
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: Self.cardSpacing) {
                 ForEach(cars) { car in
-                    let carLogs = logs.filter { $0.carId == car.id }
+                    let carLogs = groupedLogs[car.id, default: []]
                     let monthTotal = currentMonthTotal(for: carLogs)
 
                     VehicleHeroCard(
@@ -129,7 +363,7 @@ struct VehicleHeroCarousel: View {
                         monthTotal: monthTotal,
                         currencySymbol: currencySymbol,
                         fullHeight: expandedHeight,
-                        visibleHeight: effectiveHeight,
+                        visibleHeight: frameHeight,
                         onRefuel: {
                             selectedCarId = car.id
                             onRefuel()
@@ -147,23 +381,23 @@ struct VehicleHeroCarousel: View {
                             onCurrentMonth(car.id)
                         }
                     )
-                    .frame(width: cardWidth, height: effectiveHeight)
+                    .frame(width: frameWidth, height: frameHeight)
                     // Width-grow is a per-card horizontal scale anchored to
                     // center, fully independent from horizontal scroll layout.
-                    .scaleEffect(x: cardWidthScale, y: 1, anchor: .center)
+                    .scaleEffect(x: widthScale, y: 1, anchor: .center)
                     .id(car.id)
                     .accessibilityIdentifier(ViewID.heroCard(car.id))
                     .scrollTransition(.interactive, axis: .horizontal) { content, phase in
                         // Sibling fade runs in the first half of the scroll
                         // (siblingFadeProgress) so peek cards are gone before
                         // the width transition begins.
-                        let siblingFade = abs(phase.value) * siblingFadeProgress
+                        let siblingFadeAmount = abs(phase.value) * siblingFade
                         return content
                             .scaleEffect(
                                 x: 1 - abs(phase.value) * 0.1,
                                 y: 1 - abs(phase.value) * 0.1
                             )
-                            .opacity((1 - abs(phase.value) * 0.15) * (1 - siblingFade))
+                            .opacity((1 - abs(phase.value) * 0.15) * (1 - siblingFadeAmount))
                     }
                 }
             }
@@ -173,11 +407,13 @@ struct VehicleHeroCarousel: View {
         .scrollPosition(id: $selectedCarId, anchor: .center)
         .scrollIndicators(.hidden)
         .contentMargins(.horizontal, sideInset, for: .scrollContent)
-        .frame(height: effectiveHeight)
+        .frame(height: frameHeight)
         // Height-independent rubber-band: translate vertically by a fixed
-        // pixel offset so all cards feel the same regardless of size.
+        // pixel offset so all cards feel the same regardless of size. We
+        // skip the implicit spring here — overscroll already tracks the
+        // scroll view smoothly, and an implicit animation triggers the
+        // SwiftUI animator on every scroll tick, which dropped frames.
         .offset(y: rubberBandOffset)
-        .animation(.spring(response: 0.45, dampingFraction: 0.65), value: rubberBandOffset)
         .accessibilityIdentifier(ViewID.heroCarousel)
     }
 
@@ -332,7 +568,7 @@ struct VehicleHeroCard: View {
 
     @ViewBuilder
     private var heroImage: some View {
-        if let imageData = car.imageData, let uiImage = UIImage(data: imageData) {
+        if let imageData = car.imageData, let uiImage = CarImageCache.image(for: imageData) {
             Color.clear.overlay(
                 Image(uiImage: uiImage)
                     .resizable()
@@ -666,12 +902,24 @@ struct MonthBreakdownCard: View {
                 }
             }
             .padding(.vertical, 10)
-            .background(cardColor)
+            .background(
+                // Single shape that fills + draws a hairline border. Replaces
+                // a per-row .shadow() — drop shadows on long scroll lists are
+                // a major source of frame drops on real devices, the border
+                // gives a comparable depth read at near-zero GPU cost.
+                RoundedRectangle(cornerRadius: PitstopRadius.card)
+                    .fill(cardColor)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: PitstopRadius.card)
+                            .strokeBorder(
+                                isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.05),
+                                lineWidth: 0.5
+                            )
+                    )
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(PlainButtonStyle())
-        .clipShape(RoundedRectangle(cornerRadius: PitstopRadius.card))
-        .shadow(color: Color.black.opacity(isDark ? 0.2 : 0.04), radius: 8, y: 4)
         .padding(.horizontal, PitstopSpacing.pageHorizontal)
     }
 
