@@ -1,0 +1,33 @@
+// ---------------------------------------------------------------------------
+// Signing.xcconfig — COMMITTED. Base configuration for all build configs.
+// ---------------------------------------------------------------------------
+// This file is tracked in git so the project always has a valid base config
+// (CI and fresh clones included). It does NOT contain a team ID or per-
+// developer bundle identifiers.
+//
+// Each developer's Apple Developer Team ID and bundle identifier go in
+// Signing.local.xcconfig, which is gitignored. The optional include below
+// pulls it in when present and is silently skipped when absent (CI, fresh
+// clone before setup).
+//
+// SETUP (each developer, once after cloning):
+//   cp Signing.xcconfig.template Signing.local.xcconfig
+//   # then edit Signing.local.xcconfig and set DEVELOPMENT_TEAM + BUNDLE_ID_MAIN
+//
+// See Signing.xcconfig.template for full instructions.
+//
+// PRODUCTION / APP STORE BUNDLE ID (for reference):
+//   com.cardiary.xenergi  — main app, current App Store listing
+// Release builds for the App Store should set this in Signing.local.xcconfig
+// (or inject it via CI environment) on the release-signing machine.
+// ---------------------------------------------------------------------------
+
+// Defaults: empty. Each developer must supply these in Signing.local.xcconfig.
+// Automatic signing requires both DEVELOPMENT_TEAM and a bundle ID registered
+// on that team. CI builds that only need to compile can run without these,
+// or inject them via the CI environment.
+DEVELOPMENT_TEAM =
+BUNDLE_ID_MAIN =
+
+// Optional include — the "?" means "skip silently if the file does not exist".
+#include? "Signing.local.xcconfig"

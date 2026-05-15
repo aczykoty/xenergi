@@ -1,5 +1,0 @@
-// Shared build settings. Per-developer overrides go in Developer.local.xcconfig
-DEVELOPMENT_TEAM = 32NYNR2AN7
-PRODUCT_BUNDLE_IDENTIFIER = com.cardiary.xenergi
-
-#include? "Developer.local.xcconfig"
