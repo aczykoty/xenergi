@@ -142,6 +142,7 @@ struct LiveScannerHUD: View {
     @State private var isAnimating = false
     
     var body: some View {
+        GeometryReader { geo in
         ZStack {
             // Delikatne przyciemnienie całego podglądu (bez dziur i masek)
             Color.black.opacity(0.3).ignoresSafeArea()
@@ -163,7 +164,7 @@ struct LiveScannerHUD: View {
                         .opacity(isAnimating ? 1.0 : 0.5)
                 }
                 // Kwadratowy celownik (85% szerokości ekranu)
-                .frame(width: UIScreen.main.bounds.width * 0.85, height: UIScreen.main.bounds.width * 0.85)
+                .frame(width: geo.size.width * 0.85, height: geo.size.width * 0.85)
                 
                 // Tekst pod celownikiem
                 Text(type == .fuel ? "Skieruj na licznik dystrybutora" : "Skieruj na dane ładowania")
@@ -195,6 +196,7 @@ struct LiveScannerHUD: View {
                 .padding(.horizontal, 40)
                 .padding(.bottom, 50) // Wyżej, żeby kciuk łatwo trafiał
             }
+        }
         }
         .onAppear {
             withAnimation(Animation.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {

@@ -1,0 +1,42 @@
+// ---------------------------------------------------------------------------
+// Signing.xcconfig.template
+// ---------------------------------------------------------------------------
+// Template for your LOCAL signing configuration. This file is COMMITTED as a
+// reference; you create your own local copy from it.
+//
+// SETUP (each developer does this once, after cloning):
+//   1. Copy this file to "Signing.local.xcconfig" (same directory).
+//        cp Signing.xcconfig.template Signing.local.xcconfig
+//   2. Set DEVELOPMENT_TEAM below to YOUR Apple Developer Team ID.
+//   3. Set BUNDLE_ID_MAIN to a bundle ID your team can sign
+//      (typically com.<your-handle>.xenergi). Automatic signing requires
+//      the bundle ID to be registerable under your team.
+//   4. Open "dziennikpokladowy.xcodeproj" and build.
+//
+// "Signing.local.xcconfig" is gitignored, so your settings never get
+// committed and never clobber anyone else's on pull. The committed
+// "Signing.xcconfig" is the project's base config and optionally includes
+// your local file.
+//
+// WHERE TO FIND YOUR TEAM ID:
+//   - Xcode > Settings > Accounts > (your account) > the 10-char ID in parens, or
+//   - https://developer.apple.com/account > Membership details > Team ID
+//
+// PRODUCTION / APP STORE BUNDLE ID:
+//   com.cardiary.xenergi  — main app, current App Store listing
+// Use this on the release-signing machine (whichever Apple Developer team
+// owns the App Store record).
+//
+// Known team IDs on this project (for reference):
+//   567T2TVB3Z  — Tom
+//   32NYNR2AN7  — Grzegorz
+// ---------------------------------------------------------------------------
+
+DEVELOPMENT_TEAM = REPLACE_WITH_YOUR_TEAM_ID
+
+// Bundle identifier for the main target. Pick something your team can register.
+// Examples:
+//   Tom:      com.parandyk.xenergi
+//   Grzegorz: com.grzegorz.xenergi
+//   Release:  com.cardiary.xenergi
+BUNDLE_ID_MAIN = com.REPLACE.xenergi

@@ -20,6 +20,7 @@ struct CarFormView: View {
     @State private var showActionSheet = false
     @State private var showImagePicker = false
     @State private var sourceType: UIImagePickerController.SourceType = .photoLibrary
+    @State private var showDeleteConfirmation = false
     
     // MARK: - Helpers
     private var isDark: Bool { data.selectedTheme == .darkBlue }
@@ -111,6 +112,21 @@ struct CarFormView: View {
                         }
                     } header: { Text("Szczegóły paliwa").foregroundColor(.gray) }
                     .listRowBackground(rowColor)
+
+                    if carToEdit != nil {
+                        Section {
+                            Button(role: .destructive, action: { showDeleteConfirmation = true }) {
+                                HStack {
+                                    Spacer()
+                                    Label("Usuń pojazd", systemImage: "trash")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(.red)
+                                    Spacer()
+                                }
+                            }
+                        }
+                        .listRowBackground(rowColor)
+                    }
                 }
                 .scrollContentBackground(.hidden)
             }
@@ -142,6 +158,12 @@ struct CarFormView: View {
             .onChange(of: selectedType) { _, newValue in
                 updateDefaultFuel(for: newValue)
             }
+            .alert("Usunąć pojazd?", isPresented: $showDeleteConfirmation) {
+                Button("Usuń", role: .destructive) { deleteCar() }
+                Button("Anuluj", role: .cancel) { }
+            } message: {
+                Text("Pojazd i wszystkie powiązane wpisy zostaną trwale usunięte.")
+            }
         }
     }
     
@@ -171,6 +193,16 @@ struct CarFormView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
     
+    private func deleteCar() {
+        guard let car = carToEdit else { return }
+        data.logs.removeAll { $0.carId == car.id }
+        data.cars.removeAll { $0.id == car.id }
+        if selectedCarId == car.id {
+            selectedCarId = data.cars.first?.id
+        }
+        dismiss()
+    }
+
     private func save() {
         let finalSecondaryFuel: FuelType? = (hasLPG && selectedType == .petrol) ? .lpg : nil
         
