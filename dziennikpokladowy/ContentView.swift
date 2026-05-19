@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var selectedMonthData: MonthSheetData? = nil
     @State private var listAppeared: Bool = true
     @State private var displayedCarId: UUID? = nil
+    @State private var showHUD = false
 
     var selectedCar: Car? {
         data.cars.first(where: { $0.id == selectedCarId })
@@ -150,6 +151,11 @@ struct ContentView: View {
                 currencySymbol: currencySymbol
             )
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            let orientation = UIDevice.current.orientation
+            if orientation.isLandscape { showHUD = true }
+        }
+        .fullScreenCover(isPresented: $showHUD) { HUDView() }
         .preferredColorScheme(isDark ? .dark : .light)
     }
 
